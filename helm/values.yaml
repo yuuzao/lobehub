@@ -1,0 +1,230 @@
+# ===========================
+# LobeHub Helm Chart 配置
+# ===========================
+
+# -- 全局配置
+global:
+  # -- 镜像拉取策略
+  imagePullPolicy: IfNotPresent
+  # -- 镜像拉取 Secret（私有仓库时使用）
+  imagePullSecrets: []
+
+# ===========================
+# LobeHub 主应用
+# ===========================
+lobe:
+  # -- 副本数
+  replicaCount: 1
+
+  image:
+    repository: lobehub/lobehub
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 3210
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+      # kubernetes.io/ingress.class: nginx
+      # cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: lobehub.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+    #  - secretName: lobehub-tls
+    #    hosts:
+    #      - lobehub.local
+
+  resources: {}
+    # limits:
+    #   cpu: 1000m
+    #   memory: 1024Mi
+    # requests:
+    #   cpu: 500m
+    #   memory: 512Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  # -- 应用 URL（外部访问地址）
+  appUrl: "http://localhost:3210"
+
+  # -- 应用环境变量
+  env:
+    # -- LLM 视觉图片使用 base64 编码
+    LLM_VISION_IMAGE_USE_BASE64: "1"
+    # -- S3 ACL 设置
+    S3_SET_ACL: "0"
+    # -- S3 路径风格访问
+    S3_ENABLE_PATH_STYLE: "1"
+    # -- Redis 前缀
+    REDIS_PREFIX: "lobechat"
+    # -- Redis TLS
+    REDIS_TLS: "0"
+
+# ===========================
+# 密钥配置
+# ===========================
+secrets:
+  # -- 密钥保险库密钥（必填，建议使用 openssl rand -base64 32 生成）
+  keyVaultsSecret: ""
+  # -- 认证密钥（必填，建议使用 openssl rand -base64 32 生成）
+  authSecret: ""
+  # -- JWKS 密钥（JSON 格式的 RSA 密钥对，用于 JWT 签名验证）
+  jwksKey: ""
+
+# ===========================
+# PostgreSQL 配置
+# ===========================
+postgresql:
+  # -- 是否启用内置 PostgreSQL
+  enabled: true
+
+  image:
+    repository: paradedb/paradedb
+    tag: "latest-pg17"
+    pullPolicy: IfNotPresent
+
+  # -- 数据库名称
+  database: lobechat
+  # -- 数据库密码（必填）
+  password: ""
+
+  service:
+    type: ClusterIP
+    port: 5432
+
+  persistence:
+    enabled: true
+    # -- 存储类（留空则使用默认 StorageClass）
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 20Gi
+
+  resources: {}
+    # limits:
+    #   cpu: 1000m
+    #   memory: 1024Mi
+    # requests:
+    #   cpu: 250m
+    #   memory: 512Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ===========================
+# Redis 配置
+# ===========================
+redis:
+  # -- 是否启用内置 Redis
+  enabled: true
+
+  image:
+    repository: redis
+    tag: "7-alpine"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 6379
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 5Gi
+
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ===========================
+# RustFS (S3 兼容存储) 配置
+# ===========================
+rustfs:
+  # -- 是否启用内置 RustFS
+  enabled: true
+
+  image:
+    repository: rustfs/rustfs
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  # -- RustFS 访问密钥
+  accessKey: "admin"
+  # -- RustFS 密钥（必填）
+  secretKey: ""
+  # -- 存储桶名称
+  bucket: "lobe"
+  # -- 是否启用管理控制台
+  consoleEnabled: true
+
+  service:
+    type: ClusterIP
+    # -- API 端口
+    port: 9000
+    # -- 控制台端口
+    consolePort: 9001
+
+  # -- S3 端点地址（外部访问地址，用于浏览器上传图片）
+  # 如果使用 Ingress 暴露 RustFS，填写 Ingress 的外部地址
+  # 如果仅内部使用，可以留空，会自动使用集群内部地址
+  s3Endpoint: ""
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessModes:
+      - ReadWriteOnce
+    size: 20Gi
+
+  # -- RustFS 初始化 Job（用于创建 bucket 和设置策略）
+  init:
+    image:
+      repository: minio/mc
+      tag: "latest"
+      pullPolicy: IfNotPresent
+
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# ===========================
+# SearXNG 搜索引擎配置
+# ===========================
+searxng:
+  # -- 是否启用 SearXNG
+  enabled: true
+
+  image:
+    repository: searxng/searxng
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  service:
+    type: ClusterIP
+    port: 8080
+
+  # -- 自定义 SearXNG 配置文件（YAML 格式字符串）
+  # 如果留空，将使用项目自带的默认配置
+  customSettings: ""
+
+  # -- 挂载项目自带的 searxng-settings.yml
+  useDefaultSettings: true
+
+  resources: {}
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}

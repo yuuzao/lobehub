@@ -1,0 +1,17 @@
+apiVersion: v2
+name: lobehub
+description: LobeHub - 开源的高性能 AI 聊天框架 Helm Chart
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - lobehub
+  - ai
+  - chatbot
+  - llm
+home: https://github.com/lobehub/lobe-chat
+sources:
+  - https://github.com/lobehub/lobe-chat
+maintainers:
+  - name: lobehub
+    url: https://github.com/lobehub

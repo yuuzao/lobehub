@@ -1,0 +1,101 @@
+# ===========================
+# LobeHub Helm Chart 生产环境示例配置
+# ===========================
+# 使用方式:
+#   helm install lobehub ./helm -f helm/values-production.yaml
+
+# 主应用配置
+lobe:
+  replicaCount: 2
+
+  appUrl: "https://lobehub.example.com"
+
+  ingress:
+    enabled: true
+    className: "nginx"
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+      nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    hosts:
+      - host: lobehub.example.com
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: lobehub-tls
+        hosts:
+          - lobehub.example.com
+
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2048Mi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+
+# 密钥配置（生产环境请替换为真实值）
+# 建议使用: openssl rand -base64 32
+secrets:
+  keyVaultsSecret: "REPLACE_WITH_REAL_SECRET"
+  authSecret: "REPLACE_WITH_REAL_SECRET"
+  jwksKey: ""
+
+# PostgreSQL
+postgresql:
+  enabled: true
+  password: "REPLACE_WITH_STRONG_PASSWORD"
+  persistence:
+    enabled: true
+    storageClass: ""
+    size: 50Gi
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2048Mi
+    requests:
+      cpu: 500m
+      memory: 1024Mi
+
+# Redis
+redis:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 10Gi
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# RustFS
+rustfs:
+  enabled: true
+  accessKey: "admin"
+  secretKey: "REPLACE_WITH_STRONG_PASSWORD"
+  # 如果通过 Ingress 暴露 RustFS，配置外部 S3 端点
+  s3Endpoint: "https://s3.lobehub.example.com"
+  persistence:
+    enabled: true
+    size: 100Gi
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1024Mi
+    requests:
+      cpu: 250m
+      memory: 256Mi
+
+# SearXNG
+searxng:
+  enabled: true
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi

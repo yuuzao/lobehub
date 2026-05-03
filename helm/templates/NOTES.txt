@@ -1,0 +1,25 @@
+🎉 LobeHub 已成功部署！
+
+获取应用访问地址：
+
+{{- if .Values.lobe.ingress.enabled }}
+  通过 Ingress 访问:
+  {{- range $host := .Values.lobe.ingress.hosts }}
+    http{{ if $.Values.lobe.ingress.tls }}s{{ end }}://{{ $host.host }}
+  {{- end }}
+{{- else if contains "NodePort" .Values.lobe.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "lobehub.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.lobe.service.type }}
+  注意: LoadBalancer 分配外部 IP 可能需要几分钟
+  kubectl get --namespace {{ .Release.Namespace }} svc {{ include "lobehub.fullname" . }} -w
+{{- else if contains "ClusterIP" .Values.lobe.service.type }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "lobehub.fullname" . }} 3210:{{ .Values.lobe.service.port }}
+  然后访问 http://localhost:3210
+{{- end }}
+
+⚠️  重要提示:
+  - 请确保已配置 secrets.keyVaultsSecret 和 secrets.authSecret
+  - 如需上传图片到会话，请配置 rustfs.s3Endpoint 为浏览器可访问的地址
+  - 生产环境建议配置 Ingress 和 TLS

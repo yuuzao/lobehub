@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lobehub.fullname" . }}-config
+  labels:
+    {{- include "lobehub.labels" . | nindent 4 }}
+data:
+  APP_URL: {{ .Values.lobe.appUrl | quote }}
+  INTERNAL_APP_URL: "http://localhost:3210"
+  S3_ENDPOINT: {{ include "lobehub.s3.endpoint" . | quote }}
+  S3_BUCKET: {{ .Values.rustfs.bucket | quote }}
+  S3_ENABLE_PATH_STYLE: {{ .Values.lobe.env.S3_ENABLE_PATH_STYLE | quote }}
+  S3_SET_ACL: {{ .Values.lobe.env.S3_SET_ACL | quote }}
+  LLM_VISION_IMAGE_USE_BASE64: {{ .Values.lobe.env.LLM_VISION_IMAGE_USE_BASE64 | quote }}
+  REDIS_PREFIX: {{ .Values.lobe.env.REDIS_PREFIX | quote }}
+  REDIS_TLS: {{ .Values.lobe.env.REDIS_TLS | quote }}
+  {{- if .Values.searxng.enabled }}
+  SEARXNG_URL: {{ include "lobehub.searxng.url" . | quote }}
+  {{- end }}
+---
+{{- if .Values.rustfs.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "lobehub.fullname" . }}-bucket-config
+  labels:
+    {{- include "lobehub.labels" . | nindent 4 }}
+data:
+  bucket.config.json: |
+    {
+      "ID": "",
+      "Statement": [
+        {
+          "Sid": "",
+          "Effect": "Allow",
+          "Principal": {
+            "AWS": ["*"]
+          },
+          "Action": ["s3:GetObject"],
+          "NotAction": [],
+          "Resource": ["arn:aws:s3:::{{ .Values.rustfs.bucket }}/*"],
+          "NotResource": [],
+          "Condition": {}
+        }
+      ],
+      "Version": "2012-10-17"
+    }
+{{- end }}
