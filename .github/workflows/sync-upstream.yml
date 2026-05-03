@@ -1,0 +1,123 @@
+name: Sync Upstream Fork
+
+permissions:
+  contents: write
+  issues: write
+  actions: write
+
+on:
+  schedule:
+    # 每天 UTC 0:00 和 12:00 同步两次
+    - cron: '0 0,12 * * *'
+  workflow_dispatch:
+    inputs:
+      sync_branch:
+        description: '要同步的分支（默认同步 main 和 canary）'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - main
+          - canary
+
+jobs:
+  sync_main:
+    name: Sync main branch from upstream
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.sync_branch == 'all' || github.event.inputs.sync_branch == 'main'))
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Sync upstream main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/lobehub/lobehub.git || true
+          git fetch upstream main
+          git merge upstream/main --no-edit --allow-unrelated-histories || {
+            echo "::warning::main 分支合并存在冲突，请手动处理"
+            exit 1
+          }
+          git push origin main
+
+  sync_canary:
+    name: Sync canary branch from upstream
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && (github.event.inputs.sync_branch == 'all' || github.event.inputs.sync_branch == 'canary'))
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: canary
+          fetch-depth: 0
+
+      - name: Sync upstream canary
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/lobehub/lobehub.git || true
+          git fetch upstream canary
+          git merge upstream/canary --no-edit --allow-unrelated-histories || {
+            echo "::warning::canary 分支合并存在冲突，请手动处理"
+            exit 1
+          }
+          git push origin canary
+
+  notify_failure:
+    name: Notify on sync failure
+    runs-on: ubuntu-latest
+    needs: [sync_main, sync_canary]
+    if: failure()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Close previous failure issues
+        uses: actions-cool/issues-helper@v3
+        with:
+          actions: 'close-issues'
+          labels: '🚨 Sync Fail'
+
+      - name: Create failure issue
+        uses: actions-cool/issues-helper@v3
+        with:
+          actions: 'create-issue'
+          title: '🚨 上游同步失败 | Upstream Sync Failed'
+          labels: '🚨 Sync Fail'
+          body: |
+            ## 上游同步失败
+
+            从上游仓库 [lobehub/lobehub](https://github.com/lobehub/lobehub) 同步时出现问题，可能是由于合并冲突导致。
+
+            ### 手动处理步骤
+
+            ```bash
+            # 添加上游仓库
+            git remote add upstream https://github.com/lobehub/lobehub.git
+
+            # 同步 main 分支
+            git checkout main
+            git fetch upstream main
+            git merge upstream/main
+            # 解决冲突后
+            git push origin main
+
+            # 同步 canary 分支
+            git checkout canary
+            git fetch upstream canary
+            git merge upstream/canary
+            # 解决冲突后
+            git push origin canary
+            ```
+
+            或者在 GitHub 上使用 **Sync fork** 按钮手动同步。
+
+            ---
+
+            **Upstream sync failed.** This is likely caused by merge conflicts. Please manually resolve the conflicts and push to the corresponding branch.
