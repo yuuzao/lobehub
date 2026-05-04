@@ -17,8 +17,8 @@ lobe:
   replicaCount: 1
 
   image:
-    repository: lobehub/lobehub
-    tag: "latest"
+    repository: ghcr.io/yuuzao/lobehub
+    tag: 'canary'
     pullPolicy: IfNotPresent
 
   service:
@@ -27,7 +27,7 @@ lobe:
 
   ingress:
     enabled: false
-    className: ""
+    className: ''
     annotations: {}
       # kubernetes.io/ingress.class: nginx
       # cert-manager.io/cluster-issuer: letsencrypt-prod
@@ -54,31 +54,31 @@ lobe:
   affinity: {}
 
   # -- 应用 URL（外部访问地址）
-  appUrl: "http://localhost:3210"
+  appUrl: 'http://localhost:3210'
 
   # -- 应用环境变量
   env:
     # -- LLM 视觉图片使用 base64 编码
-    LLM_VISION_IMAGE_USE_BASE64: "1"
+    LLM_VISION_IMAGE_USE_BASE64: '1'
     # -- S3 ACL 设置
-    S3_SET_ACL: "0"
+    S3_SET_ACL: '0'
     # -- S3 路径风格访问
-    S3_ENABLE_PATH_STYLE: "1"
+    S3_ENABLE_PATH_STYLE: '1'
     # -- Redis 前缀
-    REDIS_PREFIX: "lobechat"
+    REDIS_PREFIX: 'lobechat'
     # -- Redis TLS
-    REDIS_TLS: "0"
+    REDIS_TLS: '0'
 
 # ===========================
 # 密钥配置
 # ===========================
 secrets:
   # -- 密钥保险库密钥（必填，建议使用 openssl rand -base64 32 生成）
-  keyVaultsSecret: ""
+  keyVaultsSecret: ''
   # -- 认证密钥（必填，建议使用 openssl rand -base64 32 生成）
-  authSecret: ""
+  authSecret: ''
   # -- JWKS 密钥（JSON 格式的 RSA 密钥对，用于 JWT 签名验证）
-  jwksKey: ""
+  jwksKey: ''
 
 # ===========================
 # PostgreSQL 配置
@@ -89,13 +89,13 @@ postgresql:
 
   image:
     repository: paradedb/paradedb
-    tag: "latest-pg17"
+    tag: 'latest-pg17'
     pullPolicy: IfNotPresent
 
   # -- 数据库名称
   database: lobechat
   # -- 数据库密码（必填）
-  password: ""
+  password: ''
 
   service:
     type: ClusterIP
@@ -104,7 +104,7 @@ postgresql:
   persistence:
     enabled: true
     # -- 存储类（留空则使用默认 StorageClass）
-    storageClass: ""
+    storageClass: ''
     accessModes:
       - ReadWriteOnce
     size: 20Gi
@@ -130,7 +130,7 @@ redis:
 
   image:
     repository: redis
-    tag: "7-alpine"
+    tag: '7-alpine'
     pullPolicy: IfNotPresent
 
   service:
@@ -139,7 +139,7 @@ redis:
 
   persistence:
     enabled: true
-    storageClass: ""
+    storageClass: ''
     accessModes:
       - ReadWriteOnce
     size: 5Gi
@@ -158,15 +158,15 @@ rustfs:
 
   image:
     repository: rustfs/rustfs
-    tag: "latest"
+    tag: 'latest'
     pullPolicy: IfNotPresent
 
   # -- RustFS 访问密钥
-  accessKey: "admin"
+  accessKey: 'admin'
   # -- RustFS 密钥（必填）
-  secretKey: ""
+  secretKey: ''
   # -- 存储桶名称
-  bucket: "lobe"
+  bucket: 'lobe'
   # -- 是否启用管理控制台
   consoleEnabled: true
 
@@ -180,11 +180,11 @@ rustfs:
   # -- S3 端点地址（外部访问地址，用于浏览器上传图片）
   # 如果使用 Ingress 暴露 RustFS，填写 Ingress 的外部地址
   # 如果仅内部使用，可以留空，会自动使用集群内部地址
-  s3Endpoint: ""
+  s3Endpoint: ''
 
   persistence:
     enabled: true
-    storageClass: ""
+    storageClass: ''
     accessModes:
       - ReadWriteOnce
     size: 20Gi
@@ -193,7 +193,7 @@ rustfs:
   init:
     image:
       repository: minio/mc
-      tag: "latest"
+      tag: 'latest'
       pullPolicy: IfNotPresent
 
   resources: {}
@@ -210,7 +210,7 @@ searxng:
 
   image:
     repository: searxng/searxng
-    tag: "latest"
+    tag: 'latest'
     pullPolicy: IfNotPresent
 
   service:
@@ -219,7 +219,7 @@ searxng:
 
   # -- 自定义 SearXNG 配置文件（YAML 格式字符串）
   # 如果留空，将使用项目自带的默认配置
-  customSettings: ""
+  customSettings: ''
 
   # -- 挂载项目自带的 searxng-settings.yml
   useDefaultSettings: true
