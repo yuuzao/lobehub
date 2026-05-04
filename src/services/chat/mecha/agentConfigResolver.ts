@@ -388,6 +388,7 @@ export const resolveAgentConfig = (ctx: AgentConfigResolverContext): ResolvedAge
     plugins: plugins || basePlugins,
     targetAgentConfig,
     userLocale: userGeneralSettingsSelectors.currentResponseLanguage(useUserStore.getState()),
+    userSystemPrompt: agentConfig.systemRole || undefined,
   });
 
   // Merge runtime systemRole into agent config

@@ -13,7 +13,7 @@ export const INBOX: BuiltinAgentDefinition = {
   avatar: '/avatars/lobe-ai.png',
   runtime: (ctx) => ({
     plugins: [AgentDocumentsIdentifier, ...(ctx.plugins || [])],
-    systemRole: createSystemRole(ctx.userLocale),
+    systemRole: createSystemRole(ctx.userLocale, ctx.userSystemPrompt),
   }),
 
   slug: BUILTIN_AGENT_SLUGS.inbox,

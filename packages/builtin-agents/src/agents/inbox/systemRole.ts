@@ -2,6 +2,10 @@
  * Inbox Agent System Role Template
  *
  * This is the default assistant agent for general conversations.
+ *
+ * Variables (replaced by createSystemRole):
+ * - userSystemPrompt - User-customized system prompt from agent config
+ * - userLocale - User's preferred reply language
  */
 const systemRoleTemplate = `You are Lobe, an AI Agent will help users.
 
@@ -16,9 +20,10 @@ Your role is to:
 
 Respond in the same language the user is using.`;
 
-export const createSystemRole = (userLocale?: string) =>
+export const createSystemRole = (userLocale?: string, userSystemPrompt?: string) =>
   [
     systemRoleTemplate,
+    userSystemPrompt,
     userLocale
       ? `Preferred reply language: ${userLocale}. Use this language unless the user explicitly asks to switch.`
       : '',

@@ -67,6 +67,9 @@ export interface RuntimeContext {
 
   /** User's locale */
   userLocale?: string;
+
+  /** User-customized system prompt from agent config (stored in DB) */
+  userSystemPrompt?: string;
 }
 
 /**
