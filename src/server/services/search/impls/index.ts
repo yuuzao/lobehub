@@ -7,7 +7,6 @@ import { FirecrawlImpl } from './firecrawl';
 import { GoogleImpl } from './google';
 import { JinaImpl } from './jina';
 import { KagiImpl } from './kagi';
-import { Search1APIImpl } from './search1api';
 import { SearXNGImpl } from './searxng';
 import { TavilyImpl } from './tavily';
 import { type SearchServiceImpl } from './type';
@@ -82,7 +81,8 @@ export const createSearchServiceImpl = (
     }
 
     default: {
-      return new Search1APIImpl();
+      console.warn(`[SearchService] Unknown search provider: "${type}", falling back to custom`);
+      return new CustomImpl();
     }
   }
 };
