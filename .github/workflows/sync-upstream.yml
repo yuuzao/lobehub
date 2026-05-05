@@ -21,6 +21,12 @@ on:
           - main
           - canary
 
+env:
+  # 我们自己维护的 workflow 文件（同步时保护这些文件不被上游覆盖）
+  OUR_WORKFLOWS: |
+    .github/workflows/sync-upstream.yml
+    .github/workflows/release-custom-docker.yml
+
 jobs:
   sync_main:
     name: Sync main branch from upstream
@@ -36,14 +42,52 @@ jobs:
 
       - name: Sync upstream main
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote add upstream https://github.com/lobehub/lobehub.git || true
           git fetch upstream main
-          git merge upstream/main --no-edit --allow-unrelated-histories || {
-            echo "::warning::main 分支合并存在冲突，请手动处理"
-            exit 1
-          }
+
+          # 备份我们的 workflow 文件
+          mkdir -p /tmp/our-workflows
+          echo "$OUR_WORKFLOWS" | while IFS= read -r f; do
+            f=$(echo "$f" | xargs)
+            [ -z "$f" ] && continue
+            [ -f "$f" ] && cp "$f" "/tmp/our-workflows/$(basename "$f")"
+          done
+
+          # 尝试合并上游代码
+          if ! git merge upstream/main --no-edit --allow-unrelated-histories; then
+            # 合并失败，检查冲突文件
+            CONFLICT_FILES=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
+            NON_WORKFLOW_CONFLICTS=$(echo "$CONFLICT_FILES" | grep -v '^\.github/workflows/' | grep -v '^$' || true)
+
+            if [ -n "$NON_WORKFLOW_CONFLICTS" ]; then
+              echo "::error::存在非 workflow 文件的合并冲突，需要手动处理："
+              echo "$NON_WORKFLOW_CONFLICTS"
+              git merge --abort
+              exit 1
+            fi
+
+            # 只有 workflow 冲突，自动解决：删除所有上游 workflow
+            echo "::notice::自动解决 .github/workflows/ 目录的合并冲突"
+            echo "$CONFLICT_FILES" | while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              git rm -f "$f" 2>/dev/null || true
+            done
+            git commit --no-edit || true
+          fi
+
+          # 合并完成后，清理所有上游 workflow，仅保留我们的
+          rm -f .github/workflows/*.yml .github/workflows/*.yaml
+          cp /tmp/our-workflows/* .github/workflows/ 2>/dev/null || true
+
+          # 如果 workflow 目录有变化则提交
+          if ! git diff --quiet .github/workflows/ || [ -n "$(git ls-files --others --exclude-standard .github/workflows/)" ]; then
+            git add .github/workflows/
+            git commit -m "🔧 chore: 清理上游 workflow，仅保留自定义 workflow"
+          fi
+
           git push origin main
 
   sync_canary:
@@ -60,14 +104,52 @@ jobs:
 
       - name: Sync upstream canary
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote add upstream https://github.com/lobehub/lobehub.git || true
           git fetch upstream canary
-          git merge upstream/canary --no-edit --allow-unrelated-histories || {
-            echo "::warning::canary 分支合并存在冲突，请手动处理"
-            exit 1
-          }
+
+          # 备份我们的 workflow 文件
+          mkdir -p /tmp/our-workflows
+          echo "$OUR_WORKFLOWS" | while IFS= read -r f; do
+            f=$(echo "$f" | xargs)
+            [ -z "$f" ] && continue
+            [ -f "$f" ] && cp "$f" "/tmp/our-workflows/$(basename "$f")"
+          done
+
+          # 尝试合并上游代码
+          if ! git merge upstream/canary --no-edit --allow-unrelated-histories; then
+            # 合并失败，检查冲突文件
+            CONFLICT_FILES=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
+            NON_WORKFLOW_CONFLICTS=$(echo "$CONFLICT_FILES" | grep -v '^\.github/workflows/' | grep -v '^$' || true)
+
+            if [ -n "$NON_WORKFLOW_CONFLICTS" ]; then
+              echo "::error::存在非 workflow 文件的合并冲突，需要手动处理："
+              echo "$NON_WORKFLOW_CONFLICTS"
+              git merge --abort
+              exit 1
+            fi
+
+            # 只有 workflow 冲突，自动解决：删除所有上游 workflow
+            echo "::notice::自动解决 .github/workflows/ 目录的合并冲突"
+            echo "$CONFLICT_FILES" | while IFS= read -r f; do
+              [ -z "$f" ] && continue
+              git rm -f "$f" 2>/dev/null || true
+            done
+            git commit --no-edit || true
+          fi
+
+          # 合并完成后，清理所有上游 workflow，仅保留我们的
+          rm -f .github/workflows/*.yml .github/workflows/*.yaml
+          cp /tmp/our-workflows/* .github/workflows/ 2>/dev/null || true
+
+          # 如果 workflow 目录有变化则提交
+          if ! git diff --quiet .github/workflows/ || [ -n "$(git ls-files --others --exclude-standard .github/workflows/)" ]; then
+            git add .github/workflows/
+            git commit -m "🔧 chore: 清理上游 workflow，仅保留自定义 workflow"
+          fi
+
           git push origin canary
 
   notify_failure:
@@ -93,20 +175,14 @@ jobs:
           body: |
             ## 上游同步失败
 
-            从上游仓库 [lobehub/lobehub](https://github.com/lobehub/lobehub) 同步时出现问题，可能是由于合并冲突导致。
+            从上游仓库 [lobehub/lobehub](https://github.com/lobehub/lobehub) 同步时出现问题。
+
+            **注意**：`.github/workflows/` 目录的冲突会自动解决。如果此 issue 被创建，说明存在**代码文件**的合并冲突，需要手动处理。
 
             ### 手动处理步骤
 
             ```bash
-            # 添加上游仓库
             git remote add upstream https://github.com/lobehub/lobehub.git
-
-            # 同步 main 分支
-            git checkout main
-            git fetch upstream main
-            git merge upstream/main
-            # 解决冲突后
-            git push origin main
 
             # 同步 canary 分支
             git checkout canary
@@ -115,9 +191,3 @@ jobs:
             # 解决冲突后
             git push origin canary
             ```
-
-            或者在 GitHub 上使用 **Sync fork** 按钮手动同步。
-
-            ---
-
-            **Upstream sync failed.** This is likely caused by merge conflicts. Please manually resolve the conflicts and push to the corresponding branch.
