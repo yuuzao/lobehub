@@ -102,7 +102,10 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
       },
     },
 
-    baseURL: appEnv.APP_URL,
+    // 如果配置了 AUTH_TRUSTED_ORIGINS（多域名场景），不锁死 baseURL，
+    // 让 BetterAuth 从请求的 Host/x-forwarded-host 自动推断，避免跨域名重定向。
+    // 仅在单域名场景下使用 APP_URL 锁定。
+    ...(authEnv.AUTH_TRUSTED_ORIGINS ? {} : { baseURL: appEnv.APP_URL }),
     secret: authEnv.AUTH_SECRET,
     trustedOrigins: getTrustedOrigins(enabledSSOProviders),
 
@@ -237,6 +240,9 @@ export function defineConfig(customOptions: CustomBetterAuthOptions) {
 
     socialProviders,
     advanced: {
+      // 信任反向代理头（x-forwarded-host, x-forwarded-proto），
+      // 让 BetterAuth 在多域名场景下正确推断当前请求的来源域名。
+      trustedProxyHeaders: ['x-forwarded-host', 'x-forwarded-proto'],
       database: {
         /**
          * Align Better Auth user IDs with our shared idGenerator for consistency.
