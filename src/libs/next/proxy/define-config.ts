@@ -227,8 +227,16 @@ export function defineConfig() {
       if (isProtected) {
         logBetterAuth('Request a protected route, redirecting to sign-in page');
 
-        const callbackUrl = `${appEnv.APP_URL}${req.nextUrl.pathname}${req.nextUrl.search}`;
-        const signInUrl = new URL('/signin', appEnv.APP_URL);
+        // 多域名场景：从请求头推断当前访问的域名，避免跨域跳转
+        const forwardedHost = req.headers.get('x-forwarded-host');
+        const forwardedProto = req.headers.get('x-forwarded-proto') || 'https';
+        const requestOrigin =
+          authEnv.AUTH_TRUSTED_ORIGINS && forwardedHost
+            ? `${forwardedProto}://${forwardedHost}`
+            : appEnv.APP_URL;
+
+        const callbackUrl = `${requestOrigin}${req.nextUrl.pathname}${req.nextUrl.search}`;
+        const signInUrl = new URL('/signin', requestOrigin);
         signInUrl.searchParams.set('callbackUrl', callbackUrl);
         const hl = req.nextUrl.searchParams.get('hl');
         if (hl) {
