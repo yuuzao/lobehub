@@ -9,17 +9,7 @@ on:
   schedule:
     # 每天 UTC 0:00 和 12:00 同步两次
     - cron: '0 0,12 * * *'
-  workflow_dispatch:
-    inputs:
-      sync_branch:
-        description: '要同步的分支（默认同步 main 和 canary）'
-        required: false
-        default: 'all'
-        type: choice
-        options:
-          - all
-          - main
-          - canary
+  workflow_dispatch: {}
 
 env:
   # 我们自己维护的 workflow 文件（同步时保护这些文件不被上游覆盖）
@@ -28,74 +18,9 @@ env:
     .github/workflows/release-custom-docker.yml
 
 jobs:
-  sync_main:
-    name: Sync main branch from upstream
-    runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && (github.event.inputs.sync_branch == 'all' || github.event.inputs.sync_branch == 'main'))
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 0
-
-      - name: Sync upstream main
-        run: |
-          set -e
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote add upstream https://github.com/lobehub/lobehub.git || true
-          git fetch upstream main
-
-          # 备份我们的 workflow 文件
-          mkdir -p /tmp/our-workflows
-          echo "$OUR_WORKFLOWS" | while IFS= read -r f; do
-            f=$(echo "$f" | xargs)
-            [ -z "$f" ] && continue
-            [ -f "$f" ] && cp "$f" "/tmp/our-workflows/$(basename "$f")"
-          done
-
-          # 尝试合并上游代码
-          if ! git merge upstream/main --no-edit --allow-unrelated-histories; then
-            # 合并失败，检查冲突文件
-            CONFLICT_FILES=$(git diff --name-only --diff-filter=U 2>/dev/null || true)
-            NON_WORKFLOW_CONFLICTS=$(echo "$CONFLICT_FILES" | grep -v '^\.github/workflows/' | grep -v '^$' || true)
-
-            if [ -n "$NON_WORKFLOW_CONFLICTS" ]; then
-              echo "::error::存在非 workflow 文件的合并冲突，需要手动处理："
-              echo "$NON_WORKFLOW_CONFLICTS"
-              git merge --abort
-              exit 1
-            fi
-
-            # 只有 workflow 冲突，自动解决：删除所有上游 workflow
-            echo "::notice::自动解决 .github/workflows/ 目录的合并冲突"
-            echo "$CONFLICT_FILES" | while IFS= read -r f; do
-              [ -z "$f" ] && continue
-              git rm -f "$f" 2>/dev/null || true
-            done
-            git commit --no-edit || true
-          fi
-
-          # 合并完成后，清理所有上游 workflow，仅保留我们的
-          rm -f .github/workflows/*.yml .github/workflows/*.yaml
-          cp /tmp/our-workflows/* .github/workflows/ 2>/dev/null || true
-
-          # 如果 workflow 目录有变化则提交
-          if ! git diff --quiet .github/workflows/ || [ -n "$(git ls-files --others --exclude-standard .github/workflows/)" ]; then
-            git add .github/workflows/
-            git commit -m "🔧 chore: 清理上游 workflow，仅保留自定义 workflow"
-          fi
-
-          git push origin main
-
   sync_canary:
     name: Sync canary branch from upstream
     runs-on: ubuntu-latest
-    if: >-
-      github.event_name == 'schedule' ||
-      (github.event_name == 'workflow_dispatch' && (github.event.inputs.sync_branch == 'all' || github.event.inputs.sync_branch == 'canary'))
     steps:
       - uses: actions/checkout@v4
         with:
@@ -155,7 +80,7 @@ jobs:
   notify_failure:
     name: Notify on sync failure
     runs-on: ubuntu-latest
-    needs: [sync_main, sync_canary]
+    needs: [sync_canary]
     if: failure()
     steps:
       - uses: actions/checkout@v4
