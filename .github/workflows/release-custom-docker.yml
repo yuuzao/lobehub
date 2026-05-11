@@ -5,12 +5,7 @@ permissions:
   packages: write
 
 on:
-  # 上游同步完成后自动触发构建
-  workflow_run:
-    workflows: ['Sync Upstream Fork']
-    types: [completed]
-    branches: [main, canary]
-  # 手动触发
+  # 仅手动触发，避免每次上游同步后自动构建/发布镜像和 Helm Chart
   workflow_dispatch:
     inputs:
       tag:
@@ -37,16 +32,12 @@ env:
 jobs:
   build-and-push:
     name: Build & Push amd64 Image
-    # 仅在上游同步成功后构建，或手动触发时构建
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || 'canary' }}
+          ref: ${{ github.event.inputs.branch || 'canary' }}
 
       - name: Get metadata
         id: vars
@@ -102,16 +93,13 @@ jobs:
 
   helm-chart:
     name: Publish Helm Chart
-    # 与 Docker 构建并行执行
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    # 与 Docker 构建并行执行，仅在手动触发时发布
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || github.event.workflow_run.head_branch || 'canary' }}
+          ref: ${{ github.event.inputs.branch || 'canary' }}
 
       - name: Get metadata
         id: vars
