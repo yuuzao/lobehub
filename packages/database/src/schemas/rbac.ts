@@ -3,23 +3,29 @@ import { boolean, index, jsonb, pgTable, primaryKey, text, timestamp } from 'dri
 import { createNanoId } from '../utils/idGenerator';
 import { timestamps } from './_helpers';
 import { users } from './user';
+import { workspaces } from './workspace';
 
 // Roles table
-export const roles = pgTable('rbac_roles', {
-  id: text('id')
-    .$defaultFn(() => createNanoId(16)())
-    .notNull()
-    .primaryKey(),
+export const roles = pgTable(
+  'rbac_roles',
+  {
+    id: text('id')
+      .$defaultFn(() => createNanoId(16)())
+      .notNull()
+      .primaryKey(),
 
-  name: text('name').notNull().unique(), // Role name, e.g.: admin, user, guest
-  displayName: text('display_name').notNull(), // Display name
-  description: text('description'), // Role description
-  isSystem: boolean('is_system').default(false).notNull(), // Whether it's a system role
-  isActive: boolean('is_active').default(true).notNull(), // Whether it's active
-  metadata: jsonb('metadata').default({}), // Role metadata
+    name: text('name').notNull().unique(), // Role name, e.g.: admin, user, guest
+    displayName: text('display_name').notNull(), // Display name
+    description: text('description'), // Role description
+    isSystem: boolean('is_system').default(false).notNull(), // Whether it's a system role
+    isActive: boolean('is_active').default(true).notNull(), // Whether it's active
+    metadata: jsonb('metadata').default({}), // Role metadata
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
 
-  ...timestamps,
-});
+    ...timestamps,
+  },
+  (t) => [index('rbac_roles_workspace_id_idx').on(t.workspaceId)],
+);
 
 export type NewRole = typeof roles.$inferInsert;
 export type RoleItem = typeof roles.$inferSelect;
@@ -76,6 +82,7 @@ export const userRoles = pgTable(
     roleId: text('role_id')
       .references(() => roles.id, { onDelete: 'cascade' })
       .notNull(),
+    workspaceId: text('workspace_id').references(() => workspaces.id, { onDelete: 'cascade' }),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true }), // Support for temporary roles
@@ -84,6 +91,7 @@ export const userRoles = pgTable(
     primaryKey({ columns: [self.userId, self.roleId] }),
     index('rbac_user_roles_user_id_idx').on(self.userId),
     index('rbac_user_roles_role_id_idx').on(self.roleId),
+    index('rbac_user_roles_workspace_id_idx').on(self.workspaceId),
   ],
 );
 
