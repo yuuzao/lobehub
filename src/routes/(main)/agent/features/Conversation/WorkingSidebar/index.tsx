@@ -5,7 +5,7 @@ import { lazy, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DESKTOP_HEADER_ICON_SMALL_SIZE } from '@/const/layoutTokens';
-import { useRepoType } from '@/features/ChatInput/RuntimeConfig/useRepoType';
+import { useRepoType } from '@/features/ChatInput/ControlBar/useRepoType';
 import RightPanel from '@/features/RightPanel';
 import { resolveTargetDeviceId } from '@/helpers/agentWorkingDirectory';
 import { useEffectiveWorkingDirectory } from '@/hooks/useEffectiveWorkingDirectory';
@@ -200,7 +200,7 @@ const AgentWorkingSidebar = memo(() => {
             width={'100%'}
           >
             <ProgressSection />
-            <ResourcesSection />
+            <ResourcesSection deviceId={remoteDeviceId} />
           </Flexbox>
         </Flexbox>
       </Flexbox>
