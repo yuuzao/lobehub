@@ -168,6 +168,7 @@ export interface OperationCreationParams {
     defaultTaskAssigneeAgentId?: string;
     documentId?: string | null;
     groupId?: string | null;
+    isSubAgent?: boolean;
     scope?: string | null;
     /** Source user message ID used for same-turn Agent Signal procedure suppression. */
     sourceMessageId?: string;
@@ -213,7 +214,7 @@ export interface OperationCreationParams {
   operationSkillSet?: OperationSkillSet;
   /**
    * Operation ID of the parent run when this operation is a sub-agent
-   * invocation (e.g. spawned via `execSubAgentTask`). Persisted to
+   * invocation (e.g. spawned via `execSubAgent`). Persisted to
    * `agent_operations.parent_operation_id` so analytics can join the
    * sub-tree back to its root.
    */
