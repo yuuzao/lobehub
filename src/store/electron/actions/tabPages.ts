@@ -1,6 +1,13 @@
 import { nanoid } from 'nanoid';
 
 import { guardedMergeCache } from '@/features/Electron/titlebar/TabBar/resolveRouteMeta';
+import {
+  isSameTabTarget,
+  PERSONAL_TAB_SCOPE,
+  resolveTabScope,
+  type TabScope,
+  tabScopeKey,
+} from '@/features/Electron/titlebar/TabBar/scope';
 import { getTabPages, saveTabPages } from '@/features/Electron/titlebar/TabBar/storage';
 import { type TabItem } from '@/features/Electron/titlebar/TabBar/types';
 import { normalizeTabUrl } from '@/features/Electron/titlebar/TabBar/url';
@@ -15,12 +22,14 @@ const generateTabId = (): string => `tab_${nanoid(8)}`;
 
 export interface TabPagesState {
   activeTabId: string | null;
+  activeTabScope: TabScope;
   tabs: TabItem[];
 }
 
 // ======== Initial State ======== //
 
 export const tabPagesInitialState: TabPagesState = {
+  activeTabScope: PERSONAL_TAB_SCOPE,
   activeTabId: null,
   tabs: [],
 };
@@ -50,9 +59,9 @@ export class TabPagesActionImpl {
   };
 
   addTab = (url: string, cached?: DynamicRouteMeta, activate = true): string => {
-    const normalized = normalizeTabUrl(url);
+    this.#ensureScopeForUrl(url);
     const { tabs } = this.#get();
-    const existing = tabs.find((t) => normalizeTabUrl(t.url) === normalized);
+    const existing = tabs.find((t) => isSameTabTarget(t, url));
 
     if (existing) {
       if (activate) {
@@ -66,6 +75,7 @@ export class TabPagesActionImpl {
   };
 
   addNewTab = (url: string, cached?: DynamicRouteMeta): string => {
+    this.#ensureScopeForUrl(url);
     return this.#createTab(url, cached, true);
   };
 
@@ -75,9 +85,8 @@ export class TabPagesActionImpl {
     return tabs.find((t) => t.id === activeTabId) ?? null;
   };
 
-  loadTabs = (): void => {
-    const { tabs, activeTabId } = getTabPages();
-    this.#set({ activeTabId, tabs }, false, 'loadTabs');
+  loadTabs = (url = '/'): void => {
+    this.#loadScope(resolveTabScope(url), true);
   };
 
   removeTab = (id: string): string | null => {
@@ -206,8 +215,24 @@ export class TabPagesActionImpl {
   };
 
   #persist = (): void => {
-    const { tabs, activeTabId } = this.#get();
-    saveTabPages(tabs, activeTabId);
+    const { activeTabScope, tabs, activeTabId } = this.#get();
+    saveTabPages(activeTabScope, tabs, activeTabId);
+  };
+
+  #ensureScopeForUrl = (url: string): void => {
+    const scope = resolveTabScope(url);
+    const { activeTabScope } = this.#get();
+    if (tabScopeKey(activeTabScope) === tabScopeKey(scope)) return;
+
+    this.#loadScope(scope);
+  };
+
+  #loadScope = (scope: TabScope, force = false): void => {
+    const { activeTabScope } = this.#get();
+    if (!force && tabScopeKey(activeTabScope) === tabScopeKey(scope)) return;
+
+    const { tabs, activeTabId } = getTabPages(scope);
+    this.#set({ activeTabId, activeTabScope: scope, tabs }, false, 'loadTabs');
   };
 }
 
