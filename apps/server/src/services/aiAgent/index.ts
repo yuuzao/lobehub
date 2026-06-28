@@ -1742,6 +1742,34 @@ export class AiAgentService {
         // `canUseDevice` degrades device-capable targets to the sandbox for
         // denied senders (e.g. external bot users) — without it a synced
         // local/device binding would let them run on the owner's machine.
+
+        // Register the op with the agent-gateway DO before dispatch, mirroring
+        // the remote-hetero branch above. Local CLI hetero (claude-code / codex)
+        // streams back via heteroIngest, which forwards live events the DO can
+        // relay even without an init — so the FIRST run renders fine. But a later
+        // `reconnectToGatewayOperation` (task topic drawer open / page reload)
+        // sends a `resume` that asks the DO for the op's status; with no session
+        // record the DO answers terminal, the client fires `session_complete`,
+        // and `onSessionComplete` clears `topic.metadata.runningOperation`. The
+        // still-running CC's next heteroIngest batch then hits
+        // StaleHeteroOperationError and is silently dropped — the agent appears
+        // to stop the moment the window is opened. Seeding the init keeps the DO
+        // reporting `running`, so resume stays connected and keeps streaming.
+        // Best-effort: a stream-manager/Redis failure must never block dispatch —
+        // the init only powers reconnect, not the run. `createStreamEventManager`
+        // probes Redis synchronously, so guard construction too, not just publish.
+        try {
+          await createStreamEventManager().publishAgentRuntimeInit(operationId, {
+            agentId: resolvedAgentId,
+            assistantMessageId: assistantMessageRecord.id,
+            heteroType,
+            topicId,
+            userId: this.userId,
+          });
+        } catch (err) {
+          log('execAgent: failed to init stream for local hetero: %O', err);
+        }
+
         const heteroPlan = resolveExecutionPlan({
           agencyConfig: agentConfig.agencyConfig,
           canUseDevice,
@@ -3454,6 +3482,7 @@ export class AiAgentService {
       instruction,
       onComplete,
       parentOperationId,
+      supervisorMessageId,
       topicId,
     } = params;
 
@@ -3499,6 +3528,17 @@ export class AiAgentService {
     // shared group conversation (no isolation thread). The bridge backfills the
     // member anchor (a short receipt) and resumes/finishes the supervisor.
     //
+    // The member response attaches to the SUPERVISOR ASSISTANT message that owns
+    // this group-management tool call (`supervisorMessageId`), NOT to the tool
+    // message. For a multi-member broadcast the member assistants are therefore
+    // siblings of the `agentCouncil` tool under one supervisor turn, and the
+    // renderer groups them into a single parallel-streaming council card. The tool
+    // message stays a pure result and the per-member anchors stay under it for the
+    // K=N barrier only. This keeps the tool node clean and lets parallel speak/
+    // broadcast turns render without the UI discontinuity the old tool-parented
+    // shape caused. Falls back to the group tool message if no supervisor id was
+    // threaded through (e.g. single-member collapses onto the tool anyway).
+    //
     // The supervisor instruction is injected as an EPHEMERAL user message
     // (`suppressUserMessage` + `ephemeralUserMessage`): it drives the member's
     // response but is NOT persisted as a `role: 'user'` row, mirroring the
@@ -3521,7 +3561,7 @@ export class AiAgentService {
           parentOperationId,
         }),
       ],
-      parentMessageId: anchorMessageId,
+      parentMessageId: supervisorMessageId ?? groupToolMessageId,
       parentOperationId,
       prompt: speakerInstruction,
       suppressUserMessage: true,
