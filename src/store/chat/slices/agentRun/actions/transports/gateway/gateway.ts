@@ -12,10 +12,12 @@ import { gatewayConnectionService } from '@/services/electron/gatewayConnection'
 import { messageService } from '@/services/message';
 import { topicService } from '@/services/topic';
 import { getAgentStoreState } from '@/store/agent';
-import { chatConfigByIdSelectors } from '@/store/agent/selectors';
+import { agentByIdSelectors, chatConfigByIdSelectors } from '@/store/agent/selectors';
+import { aiModelSelectors, getAiInfraStoreState } from '@/store/aiInfra';
 import { consumePendingTopicRepos, getPendingTopicRepos } from '@/store/chat/pendingTopicRepos';
 import { topicSelectors } from '@/store/chat/selectors';
 import type { ChatStore } from '@/store/chat/store';
+import { messageMapKey } from '@/store/chat/utils/messageMapKey';
 import type { StoreSetter } from '@/store/types';
 import { useUserStore } from '@/store/user';
 import { settingsSelectors, toolInterventionSelectors } from '@/store/user/selectors';
@@ -334,11 +336,24 @@ export class GatewayActionImpl {
     const defaultDisableGatewayMode = settingsSelectors.defaultAgentConfig(useUserStore.getState())
       .chatConfig?.disableGatewayMode;
     const disableGatewayMode = agentDisableGatewayMode ?? defaultDisableGatewayMode;
+    const model = resolvedAgentId
+      ? agentByIdSelectors.getAgentModelById(resolvedAgentId)(agentState)
+      : undefined;
+    const provider = resolvedAgentId
+      ? agentByIdSelectors.getAgentModelProviderById(resolvedAgentId)(agentState)
+      : undefined;
+    // Example: Nano Banana supports image output but not function calling; Gateway would
+    // inject agent/tools context and run the wrong runtime instead of normal image output.
+    const supportToolUse =
+      !!model &&
+      !!provider &&
+      aiModelSelectors.isModelSupportToolUse(model, provider)(getAiInfraStoreState());
 
     return (
       !!serverConfig?.agentGatewayUrl &&
       !!serverConfig.enableGatewayMode &&
-      disableGatewayMode !== true
+      disableGatewayMode !== true &&
+      supportToolUse
     );
   };
 
@@ -365,6 +380,8 @@ export class GatewayActionImpl {
     metadata?: Pick<MessageMetadata, 'trigger'>;
     /** Called when the gateway session completes (agent finished running) */
     onComplete?: () => void;
+    /** Temporary sidebar topic inserted by sendMessage before the server creates the real topic. */
+    optimisticTopic?: { id: string; title: string };
     /** Parent message ID for regeneration/continue (skip user message creation, branch from this message) */
     parentMessageId?: string;
     /**
@@ -397,6 +414,7 @@ export class GatewayActionImpl {
       message,
       metadata,
       onComplete,
+      optimisticTopic,
       parentMessageId,
       parentOperationId,
       resumeApproval,
@@ -487,6 +505,18 @@ export class GatewayActionImpl {
     if (isCreateNewTopic && result.topicId) {
       // Topic created successfully — now safe to clear the pending repo selection.
       if (context.agentId) consumePendingTopicRepos(context.agentId);
+      if (optimisticTopic) {
+        this.#get().internal_replaceTopicId({
+          agentId: context.agentId,
+          groupId: context.groupId,
+          nextId: result.topicId,
+          previousId: optimisticTopic.id,
+          value: {
+            ...(context.groupId ? {} : { sessionId: context.agentId }),
+            title: optimisticTopic.title,
+          },
+        });
+      }
       try {
         const newContext = { ...context, topicId: result.topicId };
         const messages = await messageService.getMessages(newContext);
@@ -518,9 +548,10 @@ export class GatewayActionImpl {
 
     // Use the server-created topicId for the execution context
     const execContext = { ...context, topicId: result.topicId };
+    this.#get().moveQueuedMessages(messageMapKey(context), messageMapKey(execContext));
 
     if (result.topicId) {
-      this.#get().internal_updateTopicLoading(result.topicId, true);
+      if (!optimisticTopic) this.#get().internal_updateTopicLoading(result.topicId, true);
       void this.#get().updateTopicStatus?.({
         agentId: context.agentId,
         groupId: context.groupId,
