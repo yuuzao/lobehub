@@ -483,6 +483,11 @@ export const deviceKeys = {
     deviceId,
     path,
   ]),
+  gitWorktrees: def('device:gitWorktrees', (deviceId: string, path: string) => [
+    'device:gitWorktrees',
+    deviceId,
+    path,
+  ]),
   listDevices: def('device:listDevices', () => ['device:listDevices']),
   repoType: def('device:repoType', (path: string) => ['device:repoType', path]),
 };
@@ -658,6 +663,7 @@ export const verifyKeys = {
     'verify:reportBundle',
     verifyRunId,
   ]),
+  reportSummaries: def('verify:reportSummaries', () => ['verify:reportSummaries']),
   results: def('verify:results', (operationId: string) => ['verify:results', operationId]),
   rubric: def('verify:rubric', (rubricId: string) => ['verify:rubric', rubricId]),
   rubricCriteria: def('verify:rubricCriteria', (rubricId: string) => [
