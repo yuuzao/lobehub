@@ -21,11 +21,12 @@ import { useTranslation } from 'react-i18next';
 
 import AgentProfilePopup from '@/features/AgentProfileCard/AgentProfilePopup';
 import { useActivityTime } from '@/hooks/useActivityTime';
+import { usePermission } from '@/hooks/usePermission';
 import { useTaskStore } from '@/store/task';
 import { taskDetailSelectors } from '@/store/task/selectors';
 
 import { styles } from '../shared/style';
-import CommentInput from './CommentInput';
+import RunReplyEditor from './RunReplyEditor';
 import TopicStatusIcon from './TopicStatusIcon';
 
 const formatDuration = (ms: number): string => {
@@ -72,9 +73,17 @@ const TopicCard = memo<TopicCardProps>(({ activity }) => {
   const { t } = useTranslation('chat');
   const openTopicDrawer = useTaskStore((s) => s.openTopicDrawer);
   const cancelTopic = useTaskStore((s) => s.cancelTopic);
+  const addComment = useTaskStore((s) => s.addComment);
   const activeTaskId = useTaskStore(taskDetailSelectors.activeTaskId);
+  const { allowed: canEditTask } = usePermission('create_content');
   const [commenting, setCommenting] = useState(false);
   const isRunning = activity.status === 'running';
+  // A descendant run shown in a parent detail belongs to `sourceTaskId`, not the
+  // currently open parent (`activeTaskId`) — file the follow-up on the task that
+  // owns the run so it appears where the run lives. Direct runs fall back to the
+  // active task.
+  const runTaskId = activity.sourceTaskId ?? activeTaskId;
+  const canFollowUp = canEditTask && !!runTaskId;
 
   const finalDuration =
     !isRunning && activity.time && activity.completedAt
@@ -178,8 +187,8 @@ const TopicCard = memo<TopicCardProps>(({ activity }) => {
     <Block
       clickable={!!activity.id}
       gap={8}
-      paddingBlock={12}
-      paddingInline={12}
+      paddingBlock={8}
+      paddingInline={8}
       style={{ borderRadius: cssVar.borderRadiusLG }}
       variant={'outlined'}
       onClick={activity.id ? handleOpen : undefined}
@@ -236,31 +245,38 @@ const TopicCard = memo<TopicCardProps>(({ activity }) => {
         </Flexbox>
       </Flexbox>
 
-      {activity.summary && (
-        <Text fontSize={13} style={{ color: cssVar.colorTextDescription, whiteSpace: 'pre-wrap' }}>
-          {activity.summary}
-        </Text>
-      )}
-      {activity.content && <RunContent content={activity.content} />}
-      {activeTaskId && (
-        <Flexbox horizontal justify={'flex-end'} onClick={stopPropagation}>
-          {commenting ? (
-            <Flexbox style={{ width: '100%' }}>
-              <CommentInput
-                placeholder={t('taskDetail.runFollowUpPlaceholder')}
-                taskId={activeTaskId}
-                topicId={activity.id}
-                onSent={() => setCommenting(false)}
-              />
-            </Flexbox>
-          ) : (
-            <ActionIcon
-              icon={SquarePen}
-              size={'small'}
-              title={t('taskDetail.runFollowUp')}
-              onClick={() => setCommenting(true)}
-            />
+      {(activity.summary || activity.content || canFollowUp) && (
+        <Flexbox gap={8} paddingInline={4}>
+          {activity.summary && (
+            <Text
+              fontSize={13}
+              style={{ color: cssVar.colorTextDescription, whiteSpace: 'pre-wrap' }}
+            >
+              {activity.summary}
+            </Text>
           )}
+          {activity.content && <RunContent content={activity.content} />}
+          {canFollowUp &&
+            (commenting ? (
+              <Flexbox onClick={stopPropagation}>
+                <RunReplyEditor
+                  onCancel={() => setCommenting(false)}
+                  onSubmit={async (text) => {
+                    await addComment(runTaskId!, text, { topicId: activity.id });
+                    setCommenting(false);
+                  }}
+                />
+              </Flexbox>
+            ) : (
+              <Flexbox horizontal justify={'flex-end'} onClick={stopPropagation}>
+                <ActionIcon
+                  icon={SquarePen}
+                  size={'small'}
+                  title={t('taskDetail.runFollowUp')}
+                  onClick={() => setCommenting(true)}
+                />
+              </Flexbox>
+            ))}
         </Flexbox>
       )}
     </Block>
