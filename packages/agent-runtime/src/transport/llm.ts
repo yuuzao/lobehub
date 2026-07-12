@@ -8,9 +8,9 @@ import type {
   OpenAIChatMessage,
 } from '@lobechat/types';
 
-import type { AgentEvent, AgentState, CallLLMPayload, InstructionExecutionResult } from '../types';
+import type { AgentEvent, AgentState, CallLLMPayload } from '../types';
+import type { ClassifiedLLMError } from '../utils';
 import type { ContextBuildOutput } from './context';
-import type { RuntimeMessageRef } from './message';
 
 export interface LLMStreamPayload {
   [key: string]: unknown;
@@ -22,11 +22,8 @@ export interface LLMStreamPayload {
 }
 
 /**
- * Aggregated result of one model turn.
- *
- * NOTE (scaffolding): only the always-present fields are pinned. usage / cost /
- * toolCalls / images / finishReason firm when `call_llm` (Tier C) migrates onto
- * the port — that migration is what actually dissolves the 1700-line executor.
+ * Aggregated result for lightweight stream consumers such as context
+ * compression. Full `call_llm` execution uses {@link LLMAttemptOutput}.
  */
 export interface LLMStreamResult {
   [key: string]: unknown;
@@ -77,13 +74,43 @@ export interface LLMAttemptInput {
 export type LLMAttemptExecution =
   { error: unknown; ok: false; output: LLMAttemptOutput } | { ok: true; output: LLMAttemptOutput };
 
-export interface LLMTurnInput {
-  assistantMessage: RuntimeMessageRef;
-  context: ContextBuildOutput;
+export interface LLMCallErrorInput {
+  error: unknown;
+  events: AgentEvent[];
+  interrupted: boolean;
+  output?: LLMAttemptOutput;
+  retryBudget?: number;
+}
+
+export interface LLMRetryInput {
+  attempt: number;
+  delayMs: number;
+  error: ClassifiedLLMError;
+  maxAttempts: number;
+}
+
+export interface LLMRetryPolicy {
+  classifyError: (error: unknown) => ClassifiedLLMError;
+  maxAttempts: (provider: string) => number;
+  onError?: (input: LLMCallErrorInput) => Promise<void> | void;
+  onRetry?: (input: LLMRetryInput) => Promise<void> | void;
+  resolveRetryBudget: (provider: string, error: unknown) => number;
+  waitForRetry?: (delayMs: number) => Promise<void>;
+}
+
+export interface LLMTraceInput {
+  assistantMessageId: string;
+  conversationId?: string;
   model: string;
   provider: string;
-  state: AgentState;
-  stepLabel?: string;
+}
+
+/** Narrow tracing scope shared by all attempts in one package-owned call. */
+export interface LLMTrace {
+  close: (error?: unknown) => Promise<void> | void;
+  onFirstChunk: () => void;
+  recordResult?: (output: LLMAttemptOutput) => Promise<void> | void;
+  run: <T>(task: () => Promise<T>) => Promise<T>;
 }
 
 /**
@@ -96,12 +123,10 @@ export interface LLMTurnInput {
  * `@lobechat/model-runtime`.
  */
 export interface LLMTransport {
-  /**
-   * Executes one prepared model turn. The package executor owns instruction
-   * setup/context while the adapter owns retry and persistence until those
-   * phases move onto narrower transport ports.
-   */
-  executeTurn?: (input: LLMTurnInput) => Promise<InstructionExecutionResult>;
+  /** Creates an optional host tracing scope; no instruction orchestration lives behind it. */
+  createTrace?: (input: LLMTraceInput) => LLMTrace;
+  /** Host extensions for provider retry policy and error diagnostics. */
+  retryPolicy?: LLMRetryPolicy;
   /** Executes one model attempt and returns both successful or partial output. */
   runAttempt?: (input: LLMAttemptInput) => Promise<LLMAttemptExecution>;
   stream: (
