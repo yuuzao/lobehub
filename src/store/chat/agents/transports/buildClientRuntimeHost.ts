@@ -3,6 +3,7 @@ import type { AgentRuntimeHost, OperationStore, StreamSink } from '@lobechat/age
 import type { ChatStore } from '@/store/chat/store';
 
 import { ClientMessageTransport } from './ClientMessageTransport';
+import { ClientToolTransport } from './ClientToolTransport';
 
 const localOperationStore: OperationStore = {
   clearRunningMark: async () => {},
@@ -26,6 +27,7 @@ export const buildClientRuntimeHost = (context: {
 
   const { agentId, groupId, scope, subAgentId, threadId, topicId } = runtimeOperation.context;
   const effectiveAgentId = subAgentId && scope !== 'sub_agent' ? subAgentId : agentId;
+  const messages = new ClientMessageTransport(context.get, context.messageKey, context.operationId);
 
   return {
     operation: {
@@ -37,9 +39,15 @@ export const buildClientRuntimeHost = (context: {
       topicId: topicId ?? undefined,
     },
     transports: {
-      messages: new ClientMessageTransport(context.get, context.messageKey, context.operationId),
+      messages,
       operationStore: localOperationStore,
       stream: localStreamSink,
+      tools: new ClientToolTransport(
+        context.get,
+        context.messageKey,
+        context.operationId,
+        messages,
+      ),
     },
   };
 };
