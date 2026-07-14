@@ -22,6 +22,11 @@ import { publishResourceEvent } from '@/server/services/resourceEvents';
 import { hasWorkspaceScopedPermission } from '@/server/services/workspacePermission';
 import { TransferErrorCode } from '@/types/transferError';
 
+import {
+  assertWorkspaceRowManageable,
+  isWorkspaceNonOwner,
+} from './_helpers/assertWorkspaceRowManageable';
+
 const agentProcedure = wsCompatProcedure.use(serverDatabase).use(async (opts) => {
   const { ctx } = opts;
   const wsId = ctx.workspaceId ?? undefined;
@@ -184,6 +189,23 @@ export const agentRouter = router({
             code: 'BAD_REQUEST',
             message:
               'Cannot make this agent private while workspace tasks still depend on it. Reassign those tasks or make them private first.',
+          });
+        }
+
+        // Same source-level guard for group chats, but only for the supervisor
+        // role: a private supervisor is unresolvable for every other viewer and
+        // bricks the whole group. Regular members are not blocked — roster
+        // reads drop a non-visible member per viewer instead (LOBE-11772).
+        const chatGroupModel = new ChatGroupModel(ctx.serverDB, ctx.userId, ctx.workspaceId);
+        const blockingGroups = await chatGroupModel.countGroupsBlockingAgentDemotion(
+          input.id,
+          meta.userId,
+        );
+        if (blockingGroups > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'Cannot make this agent private while it supervises workspace group chats. Remove it as supervisor first.',
           });
         }
       }
@@ -452,6 +474,24 @@ export const agentRouter = router({
     .use(withScopedPermission('agent:delete'))
     .input(z.object({ agentId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      // Deleting cascades sessions/topics/messages, so gate to the creator or
+      // a workspace owner before the destructive write.
+      const meta = await ctx.agentModel.getAgentVisibilityMeta(input.agentId);
+      if (!meta) throw new TRPCError({ code: 'NOT_FOUND', message: 'Agent not found' });
+      assertWorkspaceRowManageable(ctx, meta.userId, 'agent');
+      // Same rule as transfer: the delete cascade erases every linked
+      // session/topic/message, so a non-owner member must not take teammates'
+      // conversations down with their own agent.
+      if (
+        isWorkspaceNonOwner(ctx) &&
+        (await ctx.agentModel.transferHasForeignRows(input.agentId))
+      ) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: "Only workspace owners can delete an agent carrying others' conversations",
+        });
+      }
+
       return ctx.agentModel.delete(input.agentId);
     }),
 
@@ -505,9 +545,11 @@ export const agentRouter = router({
         });
       }
 
-      // 2. In workspace mode, members can only transfer agents they created;
-      //    workspace owners can transfer any agent
-      if (ctx.workspaceId && agent.userId !== ctx.userId) {
+      // 2. In workspace mode, members can only transfer private agents they
+      //    created. Public (workspace-shared) agents carry every member's
+      //    conversations, so moving them out is owner-only — even for the
+      //    creator. Owner-level AGENT_UPDATE (scope ALL) overrides both.
+      if (ctx.workspaceId && (agent.visibility === 'public' || agent.userId !== ctx.userId)) {
         const canOverride = await hasWorkspaceScopedPermission({
           action: 'AGENT_UPDATE',
           db: ctx.serverDB,
@@ -520,7 +562,7 @@ export const agentRouter = router({
           throw new TRPCError({
             cause: { data: { code: TransferErrorCode.OwnerOnly } },
             code: 'FORBIDDEN',
-            message: 'Only workspace owners can transfer agents created by others',
+            message: 'Only workspace owners can transfer shared agents or agents created by others',
           });
         }
       }
@@ -549,6 +591,20 @@ export const agentRouter = router({
           cause: { data: { code: TransferErrorCode.SameWorkspace } },
           code: 'BAD_REQUEST',
           message: 'Cannot transfer agent to the same workspace',
+        });
+      }
+
+      // 5. The transfer rehomes every linked topic/message/thread/task — a
+      //    non-owner member must not move teammates' conversations along with
+      //    their own agent.
+      if (
+        isWorkspaceNonOwner(ctx) &&
+        (await ctx.agentModel.transferHasForeignRows(input.agentId))
+      ) {
+        throw new TRPCError({
+          cause: { data: { code: TransferErrorCode.OwnerOnly } },
+          code: 'FORBIDDEN',
+          message: "Only workspace owners can transfer an agent carrying others' conversations",
         });
       }
 

@@ -485,3 +485,54 @@ actions can disappear before their confirmation surface opens.
 **Correct approach**: coordinate both surfaces through explicit shared state. Keep
 the hover surface disabled for the complete lifetime of the nested action popover,
 then restore it only after that popover closes.
+
+---
+
+## Case 19 — Coordinator hand-driving a broken UI flow instead of re-delegating
+
+**Wrong approach**: after a delegated UI-verification subagent is killed mid-case,
+the coordinator takes over and drives the remaining flow inline — dozens of small
+browser commands (probe, reload, sign-in retries, dialog step-through), plus a deep
+root-cause dig into a flapping shared dependency, all in the main loop.
+
+**Why it's wrong**: the coordinator's per-step latency and context cost are far
+higher than a subagent's, and inline grinding turns one recoverable failure into a
+long visible stall. Root-causing an env flake (a shared cache/DB rejecting
+connections) is also not the goal of the test run — a disposable local replacement
+gets the case unblocked in one step.
+
+**What it breaks**: the user watches minutes of micro-steps with no case progress
+and loses confidence; total wall-clock and token spend balloon for zero extra
+evidence value.
+
+**Correct approach**: when a delegated case dies, repackage the _remaining_ steps
+into a fresh, tightly-scoped subagent prompt (include everything already learned:
+working recipes, seeded fixtures, exact remaining assertions). Timebox any
+environment rabbit hole to a couple of probes, then switch to a disposable local
+substitute (e.g. spin up a local instance and override the connection env var for
+the test server) instead of diagnosing shared infrastructure.
+
+---
+
+## Case 20 — Calling a server-side permission change "no UI surface" and shipping an API-transcript-only report
+
+**Wrong approach**: for a change that only edits TRPC routers (tightening who may
+mutate a shared resource), classifying the run as backend-only and publishing a
+verify report whose evidence is exclusively curl/API probe transcripts. The user
+opened the report and asked "完全没有截图吗？".
+
+**Why it's wrong**: a permission tightening IS a UI-visible state — the blocked
+user still sees the edit/delete affordances and now gets a rejection (error toast /
+failed action) when clicking them. "The diff touches no .tsx file" does not mean
+"no UI surface"; the UI surface is the product behavior the change alters, not the
+files it edits.
+
+**What it breaks**: the report cannot show what a real blocked user experiences
+(is the rejection surfaced comprehensibly? silently swallowed? a raw error?), and
+it misses UX follow-ups the screenshot would expose (e.g. affordances that should
+be hidden/disabled for users who will always be rejected).
+
+**Correct approach**: for any authorization/permission change, drive the REAL UI
+as the blocked role and screenshot the rejection state (and the allowed role's
+success state) in addition to API probes. If the rejection renders as a raw or
+missing error message, report that as a finding instead of leaving it undiscovered.
