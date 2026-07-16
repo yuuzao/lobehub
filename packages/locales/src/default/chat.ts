@@ -252,6 +252,8 @@ export default {
   'groupSidebar.members.orchestrator': 'Orchestrator',
   'groupSidebar.members.orchestratorThinking': 'Orchestrator is thinking...',
   'groupSidebar.members.removeMember': 'Remove Member',
+  'groupSidebar.members.sortMember': 'Sort Members',
+  'groupSidebar.members.sortModalTitle': 'Sort Members',
   'groupSidebar.members.stopOrchestrator': 'Stop',
   'groupSidebar.members.triggerOrchestrator': 'Start',
   'groupSidebar.tabs.host': 'Orchestrator',
@@ -679,6 +681,10 @@ export default {
     'Scheduled. This run will continue automatically once the limit resets.',
   'cliRateLimitGuide.schedule.scheduledForApprox':
     'Scheduled. This run will continue automatically in about {{duration}}.',
+  'cliRateLimitGuide.schedule.titleAfterReset':
+    'Scheduled {{name}} to continue after the limit resets',
+  'cliRateLimitGuide.schedule.titleForApprox':
+    'Scheduled {{name}} to continue in about {{duration}}',
   'cliRateLimitGuide.resetUnknown': 'the quota resets',
   'cliRateLimitGuide.title': '{{name}} is temporarily unavailable',
   'codexInstallGuide.actions.openDocs': 'Open Install Guide',
@@ -796,7 +802,6 @@ export default {
   'operation.sendMessage': 'Sending message',
   'owner': 'Group owner',
   'pageCopilot.title': 'Page Agent',
-  'pageCopilot.welcome': `**Clearer, sharper writing**\n\nDraft, rewrite, or polish—tell me your intent and I'll refine the rest.`,
   'pageSelection.lines': 'Lines {{start}}-{{end}}',
   'pageSelection.reference': 'Selected Text',
   'textSelection.added': 'Added to conversation context',
@@ -892,6 +897,7 @@ export default {
   'sendPlaceholderWithAgentAssignment':
     'Ask, create, or start a task. @ to assign tasks to other agents.',
   'sessionGroup.config': 'Category Management',
+  'sessionGroup.manageCategory': 'Manage Category',
   'sessionGroup.confirmRemoveGroupAlert':
     'This category is about to be deleted. After deletion, the agents in this category will be moved to the default list. Please confirm your operation.',
   'sessionGroup.createAgentSuccess': 'Agent created successfully',
@@ -1227,7 +1233,6 @@ export default {
   'taskList.breadcrumb.task': 'Task',
   'taskList.empty': 'No tasks yet',
   'taskList.emptyHero.greeting': 'What should we tackle today?',
-  'taskList.emptyHero.subtitle': 'Describe a task for your agent, or start from a template below.',
   'taskList.emptyHero.templatesTitle': 'Templates picked for you',
   'taskList.form.grouping': 'Grouping',
   'taskList.form.orderCompletedByRecency': 'Sort completed tasks by recency',
@@ -1731,6 +1736,11 @@ export default {
   'verifyConfig.verifierTypeDesc.agent': 'Spawn a sub-agent to investigate and judge',
   'verifyConfig.verifierTypeDesc.llm': 'Let an LLM judge the result',
   'verifyConfig.verifierTypeDesc.program': 'Run a deterministic script to check',
+  'internalLink.preview.acceptance': 'Acceptance',
+  'internalLink.preview.acceptanceCounts':
+    '{{passed}}/{{total}} passed · {{exceptions}} exceptions',
+  'internalLink.preview.acceptanceRounds_one': '{{count}} verification round',
+  'internalLink.preview.acceptanceRounds_other': '{{count}} verification rounds',
   'internalLink.preview.agent': 'Agent',
   'internalLink.preview.document': 'Page',
   'internalLink.preview.task': 'Task',

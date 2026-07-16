@@ -6,11 +6,15 @@ import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  deriveReportVerdict,
+  genericContextFromResult,
   originFromEnv,
   parseSubjectRef,
   planFromResult,
   registerVerifyCommand,
   reportEvidence,
+  scenarioFromResult,
+  subjectFromEnv,
   subjectFromResult,
   surfacesFromResult,
 } from './verify';
@@ -437,19 +441,16 @@ describe('planFromResult — plan item normalization', () => {
     expect(planFromResult({ plan: [{ id: '1' }] })).toEqual([]);
   });
 
-  it('distinguishes "no plan field" from "an empty plan", so a re-ingest can CLEAR a stale one', () => {
-    // Absent → undefined → `updateRun` omits it → whatever is stored stays.
+  it('distinguishes "no plan field" from an explicitly empty plan', () => {
+    // Absent → undefined: this snapshot did not declare a plan.
     expect(planFromResult({})).toBeUndefined();
 
-    // Present but empty → `[]` → the stored plan is overwritten with nothing.
-    // Without this, re-ingesting a reused report dir whose plan was emptied
-    // would leave the PREVIOUS round's plan attached, and every one of its items
-    // would render as "not run" against a report that never planned them.
+    // Present but empty → `[]`: this snapshot explicitly planned no checks.
     expect(planFromResult({ plan: [] })).toEqual([]);
   });
 });
 
-describe('verify ingest-report — decided rounds are immutable', () => {
+describe('verify ingest-report — every run is an immutable acceptance round', () => {
   let consoleSpy: ReturnType<typeof vi.spyOn>;
   let dir: string;
 
@@ -457,19 +458,22 @@ describe('verify ingest-report — decided rounds are immutable', () => {
     consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     mockGetTrpcClient.mockResolvedValue(mockTrpcClient);
     const verify = mockTrpcClient.verify as Record<string, any>;
-    verify.getRun = { query: vi.fn() };
     verify.createRun = { mutate: vi.fn().mockResolvedValue({ id: 'run-new' }) };
     verify.updateRun = { mutate: vi.fn() };
     verify.upsertReport = { mutate: vi.fn().mockResolvedValue({}) };
+    mockTrpcClient.acceptance = {
+      attachRun: { mutate: vi.fn() },
+      ensure: { mutate: vi.fn().mockResolvedValue({ id: 'acceptance-1' }) },
+    };
 
     dir = mkdtempSync(path.join(tmpdir(), 'lh-ingest-'));
     writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ cases: [] }));
-    // The sidecar remembers the previous round's session.
-    writeFileSync(path.join(dir, '.verify-run.json'), JSON.stringify({ verifyRunId: 'run-old' }));
+    process.env.LOBEHUB_TOPIC_ID = 'topic-1';
   });
 
   afterEach(() => {
     consoleSpy.mockRestore();
+    delete process.env.LOBEHUB_TOPIC_ID;
     rmSync(dir, { force: true, recursive: true });
   });
 
@@ -480,30 +484,140 @@ describe('verify ingest-report — decided rounds are immutable', () => {
     await program.parseAsync(['node', 'lh', 'verify', ...args]);
   };
 
-  it('starts a fresh round instead of updating a decided session in place', async () => {
+  it('creates a fresh run and binds it to the current topic acceptance', async () => {
     const verify = mockTrpcClient.verify as Record<string, any>;
-    verify.getRun.query.mockResolvedValue({
-      id: 'run-old',
-      metadata: null,
-      userDecision: 'reject',
-    });
 
     await run(['ingest-report', dir, '--json']);
 
-    // The rejected round is history: no in-place update, a new session instead.
     expect(verify.updateRun.mutate).not.toHaveBeenCalled();
     expect(verify.createRun.mutate).toHaveBeenCalled();
+    expect(mockTrpcClient.acceptance.ensure.mutate).toHaveBeenCalledWith({
+      requirement: undefined,
+      subjectId: 'topic-1',
+      subjectType: 'topic',
+    });
+    expect(mockTrpcClient.acceptance.attachRun.mutate).toHaveBeenCalledWith({
+      acceptanceId: 'acceptance-1',
+      verifyRunId: 'run-new',
+    });
   });
 
-  it('still updates an undecided remembered session in place', async () => {
+  it('passes a non-coding scenario and its context bag through to the run', async () => {
     const verify = mockTrpcClient.verify as Record<string, any>;
-    verify.getRun.query.mockResolvedValue({ id: 'run-old', metadata: null, userDecision: null });
-    verify.listResultsByRun = { query: vi.fn().mockResolvedValue([]) };
+    writeFileSync(
+      path.join(dir, 'result.json'),
+      JSON.stringify({
+        cases: [],
+        context: { question: 'How mature is X?', sourceCount: 8 },
+        scenario: 'research',
+      }),
+    );
 
     await run(['ingest-report', dir, '--json']);
 
-    expect(verify.updateRun.mutate).toHaveBeenCalled();
-    expect(verify.createRun.mutate).not.toHaveBeenCalled();
+    expect(verify.createRun.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        context: expect.objectContaining({ question: 'How mature is X?', sourceCount: 8 }),
+        scenario: 'research',
+      }),
+    );
+  });
+
+  it('finishes the human (non-json) output path for a non-coding report', async () => {
+    // Regression: `pullRequest` was block-scoped inside the coding branch while
+    // the text success output still read it, so every non-json ingest crashed
+    // with a ReferenceError AFTER creating the run.
+    const verify = mockTrpcClient.verify as Record<string, any>;
+    writeFileSync(
+      path.join(dir, 'result.json'),
+      JSON.stringify({
+        cases: [],
+        context: { question: 'How mature is X?' },
+        scenario: 'research',
+      }),
+    );
+
+    await run(['ingest-report', dir]);
+
+    expect(verify.createRun.mutate).toHaveBeenCalledWith(
+      expect.objectContaining({ scenario: 'research' }),
+    );
+    // The success tail printed — the command reached past the run creation.
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('verifyRunId'));
+  });
+
+  it('rejects an unknown scenario instead of silently tagging the run coding', async () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit ${code}`);
+    }) as never);
+    writeFileSync(path.join(dir, 'result.json'), JSON.stringify({ cases: [], scenario: 'poetry' }));
+
+    try {
+      await expect(run(['ingest-report', dir, '--json'])).rejects.toThrow('process.exit 1');
+      expect(
+        (mockTrpcClient.verify as Record<string, any>).createRun.mutate,
+      ).not.toHaveBeenCalled();
+    } finally {
+      exitSpy.mockRestore();
+    }
+  });
+
+  it('creates another run when the same report directory is ingested again', async () => {
+    const verify = mockTrpcClient.verify as Record<string, any>;
+    verify.createRun.mutate
+      .mockResolvedValueOnce({ id: 'run-first' })
+      .mockResolvedValueOnce({ id: 'run-second' });
+
+    await run(['ingest-report', dir, '--json']);
+    await run(['ingest-report', dir, '--json']);
+
+    expect(verify.createRun.mutate).toHaveBeenCalledTimes(2);
+    expect(mockTrpcClient.acceptance.attachRun.mutate).toHaveBeenNthCalledWith(1, {
+      acceptanceId: 'acceptance-1',
+      verifyRunId: 'run-first',
+    });
+    expect(mockTrpcClient.acceptance.attachRun.mutate).toHaveBeenNthCalledWith(2, {
+      acceptanceId: 'acceptance-1',
+      verifyRunId: 'run-second',
+    });
+  });
+});
+
+describe('scenarioFromResult / genericContextFromResult — non-coding scenarios', () => {
+  it('defaults to coding and passes any known scenario through', () => {
+    expect(scenarioFromResult({})).toBe('coding');
+    expect(scenarioFromResult({ scenario: 'research' })).toBe('research');
+    expect(scenarioFromResult({ scenario: 'writing' })).toBe('writing');
+    expect(scenarioFromResult({ scenario: 'generic' })).toBe('generic');
+  });
+
+  it('hard-errors on a scenario nothing renders', () => {
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit ${code}`);
+    }) as never);
+
+    try {
+      expect(() => scenarioFromResult({ scenario: 'poetry' })).toThrow('process.exit 1');
+    } finally {
+      exitSpy.mockRestore();
+    }
+  });
+
+  it('lifts shared provenance defaults but lets explicit context keys win', () => {
+    expect(
+      genericContextFromResult({
+        context: { testedAt: '2026-07-16T10:00:00Z', wordCount: 82_000, work: '长夜' },
+        createdAt: '2026-07-15T00:00:00Z',
+        entry: 'lh doc export',
+      }),
+    ).toEqual({
+      entry: 'lh doc export',
+      testedAt: '2026-07-16T10:00:00Z',
+      wordCount: 82_000,
+      work: '长夜',
+    });
+
+    expect(genericContextFromResult({})).toBeUndefined();
   });
 });
 
@@ -594,5 +708,43 @@ describe('originFromEnv — in-app provenance', () => {
     delete process.env.LOBEHUB_OPERATION_ID;
 
     expect(originFromEnv()).toBeUndefined();
+  });
+});
+
+describe('deriveReportVerdict — headline fallback when summary.verdict is absent', () => {
+  it('derives passed when every case passed', () => {
+    expect(deriveReportVerdict([{ result: 'passed' }, { result: 'ok' }])).toBe('passed');
+  });
+
+  it('any failed case fails the report', () => {
+    expect(deriveReportVerdict([{ result: 'passed' }, { result: 'failed' }])).toBe('failed');
+  });
+
+  it('a non-passed, non-failed case makes the report uncertain', () => {
+    expect(deriveReportVerdict([{ result: 'passed' }, { result: 'blocked' }])).toBe('uncertain');
+  });
+
+  it('no cases → no derived verdict', () => {
+    expect(deriveReportVerdict([])).toBeUndefined();
+  });
+});
+
+describe('subjectFromEnv — default topic acceptance', () => {
+  const saved = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+
+  it('binds an in-app run to its authoring topic', () => {
+    process.env.LOBEHUB_TOPIC_ID = 'tpc_1';
+
+    expect(subjectFromEnv()).toEqual({ subjectId: 'tpc_1', subjectType: 'topic' });
+  });
+
+  it('requires an explicit subject outside a topic', () => {
+    delete process.env.LOBEHUB_TOPIC_ID;
+
+    expect(subjectFromEnv()).toBeNull();
   });
 });

@@ -21,6 +21,11 @@ import { useTranslation } from 'react-i18next';
 
 import type { AcceptanceBundle } from '@/services/verify';
 
+import {
+  EvidenceComparisonCard,
+  readEvidenceComparison,
+} from '../components/EvidenceComparisonCard';
+
 export type AcceptanceCheck = AcceptanceBundle['checks'][number];
 export type AcceptanceCheckState = AcceptanceCheck['state'];
 type AcceptanceEvidence = AcceptanceCheck['evidence'][number];
@@ -109,6 +114,25 @@ const styles = createStaticStyles(({ css }) => ({
     border-radius: ${cssVar.borderRadiusLG};
     background: ${cssVar.colorBgContainer};
   `,
+  groupFooter: css`
+    cursor: pointer;
+
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    justify-content: center;
+
+    padding-block: 6px;
+    border-block-start: 1px solid ${cssVar.colorBorderSecondary};
+
+    font-size: 12px;
+    color: ${cssVar.colorTextQuaternary};
+
+    &:hover {
+      color: ${cssVar.colorTextSecondary};
+      background: ${cssVar.colorFillQuaternary};
+    }
+  `,
   groupHeader: css`
     cursor: pointer;
     padding-block: 10px;
@@ -188,13 +212,68 @@ const EVIDENCE_BADGES = [
 const isFilename = (value: string | null | undefined) =>
   !value || /^[\w.-]+\.(?:gif|jpe?g|mp4|png|webm|webp)$/i.test(value);
 
+/** Flat media for a comparison side — the card frames it, so no own border/radius. */
+const comparisonContent = (item: AcceptanceEvidence) =>
+  item.type === 'video' ? (
+    <video controls src={item.fileUrl!} style={{ display: 'block', width: '100%' }} />
+  ) : (
+    <Image
+      preview
+      alt={item.description ?? item.fileName ?? item.type}
+      loading={'lazy'}
+      src={item.fileUrl!}
+      style={{ borderRadius: 0, width: '100%' }}
+      variant={'borderless'}
+    />
+  );
+
 const EvidenceList = memo<{ evidence: AcceptanceEvidence[] }>(({ evidence }) => {
   const sorted = [...evidence].sort((a, b) => (isVisual(b) ? 1 : 0) - (isVisual(a) ? 1 : 0));
   if (sorted.length === 0) return null;
 
+  // Before/after pairs render as one fused comparison card (same component as
+  // the verify report). Only complete pairs fuse; a lone half stays a plain
+  // artifact, matching the ingest CLI's warning semantics.
+  const groups = new Map<string, Partial<Record<'after' | 'before', AcceptanceEvidence>>>();
+  for (const item of sorted) {
+    if (!isVisual(item)) continue;
+    const comparison = readEvidenceComparison(item.metadata);
+    if (!comparison) continue;
+    const group = groups.get(comparison.id) ?? {};
+    group[comparison.role] = item;
+    groups.set(comparison.id, group);
+  }
+  const pairedIds = new Set(
+    [...groups.values()]
+      .filter((group) => group.before && group.after)
+      .flatMap((group) => [group.before!.id, group.after!.id]),
+  );
+
+  const comparisonSide = (item: AcceptanceEvidence) => ({
+    caption:
+      readEvidenceComparison(item.metadata)?.label ??
+      (isFilename(item.description) ? undefined : (item.description ?? undefined)),
+    content: comparisonContent(item),
+  });
+
   return (
     <Flexbox gap={12}>
       {sorted.map((item) => {
+        if (pairedIds.has(item.id)) {
+          const comparison = readEvidenceComparison(item.metadata)!;
+          // The pair renders once, anchored at its `before` half.
+          if (comparison.role !== 'before') return null;
+          const group = groups.get(comparison.id)!;
+          return (
+            <EvidenceComparisonCard
+              after={comparisonSide(group.after!)}
+              before={comparisonSide(group.before!)}
+              key={comparison.id}
+              layout={comparison.layout}
+            />
+          );
+        }
+
         const caption = !isFilename(item.description) && (
           <span className={styles.caption}>{item.description}</span>
         );
@@ -481,18 +560,16 @@ interface CheckGroup {
 }
 
 /**
- * Group by the harness-authored `category`, falling back to the product
- * surface, then a catch-all — familiar sections over storage taxonomy (P-14).
+ * Group by the harness-authored business `category`. Product surfaces describe
+ * where a check ran, not what user requirement it verifies, so they must never
+ * become acceptance sections.
  */
-export const groupChecks = (
-  checks: AcceptanceCheck[],
-  surfaceLabel: (surface: NonNullable<AcceptanceCheck['surface']>) => string,
-  otherLabel: string,
-): CheckGroup[] => {
+export const groupChecks = (checks: AcceptanceCheck[], otherLabel: string): CheckGroup[] => {
   const groups = new Map<string, CheckGroup>();
   for (const check of checks) {
-    const key = check.category ?? (check.surface ? `surface:${check.surface}` : 'other');
-    const label = check.category ?? (check.surface ? surfaceLabel(check.surface) : otherLabel);
+    const category = check.category?.trim();
+    const key = category ? `category:${category}` : 'uncategorized';
+    const label = category || otherLabel;
     const group = groups.get(key) ?? { checks: [], key, label };
     group.checks.push(check);
     groups.set(key, group);
@@ -531,11 +608,7 @@ const CheckList = memo<CheckListProps>(
       return true;
     };
 
-    const groups = groupChecks(
-      checks,
-      (surface) => t(`report.surface.${surface}`),
-      t('acceptance.surface.other'),
-    )
+    const groups = groupChecks(checks, t('acceptance.group.uncategorized'))
       .map((group) => ({
         ...group,
         rows: group.checks
@@ -617,6 +690,14 @@ const CheckList = memo<CheckListProps>(
                     onToggle={() => onToggleItem(check.id)}
                   />
                 ))}
+              {/* Bottom escape hatch — after scrolling through the group's rows,
+                  collapse it without travelling back to the header. */}
+              {!collapsed && (
+                <div className={styles.groupFooter} onClick={() => onToggleGroup(key)}>
+                  <Icon icon={ChevronsDownUp} size={12} />
+                  {t('acceptance.group.collapse', { label })}
+                </div>
+              )}
             </Fragment>
           );
         })}
