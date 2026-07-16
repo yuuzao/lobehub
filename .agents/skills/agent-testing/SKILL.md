@@ -31,10 +31,33 @@ Finish unless the user explicitly asks to keep the environment running.
 Confirm what will run and whether the environment is ready before changing or
 starting anything.
 
-### Step 0 — Read the two living logs (mandatory, before every run)
+Skill-internal setup — loading this skill, reading the living logs and
+reference files — is silent preparation: never narrate it to the user ("I'll
+load the mandatory living logs first…" is noise). The first user-visible
+message of a session is about the user's test — the target confirmation
+(Step 0) or the Phase 1 approval gate — in one message, not a setup
+announcement followed by the same question again.
 
-Before doing anything else, read both of these in full and hold them in mind for
-this run:
+### Step 0 — Ground the target, then read the two living logs (mandatory)
+
+**A test target must exist before anything else happens.** When the invocation
+carries none (bare skill invocation, no pending ask in the conversation),
+ground it first — do NOT read the living logs or touch the environment yet:
+
+1. Take the target from the user's words in this conversation when they
+   exist — the task lives in their words, not in git (common-mistakes Case 3).
+2. Otherwise, infer the most likely candidate from observable context (current
+   branch, recent commits, working-tree changes) and confirm it with one
+   structured question — the candidate as the recommended option, clearly
+   labeled as a guess. Never start executing against an unconfirmed guess.
+3. Only when nothing is inferable, ask one direct open question. Asking "what
+   should I verify" is the one legitimate opening question (common-mistakes
+   Case 8) — but asking it open-ended when a candidate was inferable wastes
+   the user's turn.
+
+**Once the target is known**, read both of these in full and hold them in mind
+for this run. Reading them before a target exists wastes context that may be
+compacted away before Execute — they inform execution, not target selection:
 
 - [references/common-mistakes.md](./references/common-mistakes.md) — mistakes the
   user has called out. Two that keep biting:
@@ -611,6 +634,26 @@ It prints the `verifyRunId` and, with `--open`, the in-app path
 inline screenshot/text evidence). On production that resolves to
 `https://app.lobehub.com/verify/<verifyRunId>`. **Include that full production
 link in the final chat reply** alongside the local report dir.
+
+#### Chaining rounds onto a subject's acceptance (optional)
+
+When the verification belongs to a business subject — a task, a topic, or a
+document — chain the session onto that subject's **acceptance aggregate** so
+every round lands on ONE decision page instead of scattered report entries:
+
+```bash
+# SUBJECT is task:$TASK_ID, topic:$TOPIC_ID, or document:$DOC_ID
+env -u LOBEHUB_SERVER -u LOBE_API_KEY -u LOBEHUB_CLI_API_KEY -u LOBEHUB_CLI_HOME \
+  lh verify ingest-report "$DIR" --source agent-testing --subject "$SUBJECT" --open --json
+```
+
+`--subject` accepts `task:<id> | topic:<id> | document:<id>` (or put
+`"subject": "task:<id>"` / `{ "type", "id", "requirement" }` in `result.json`).
+The first ingest creates the acceptance; each **new session** (`--new` or a fresh
+`$DIR`) becomes the next round; re-ingesting a remembered dir updates its round
+in place. The user closes the loop on `/acceptance/<acceptanceId>` (also
+printed by `--open`) — accept / reject with a comment; inspect or decide from the
+terminal via `lh verify acceptance view|accept|reject <id | type:id>`.
 
 #### Re-verifying the same case updates the report in place (don't spawn a new one)
 
