@@ -1,4 +1,6 @@
 import type {
+  AcceptanceCheckReviewAction,
+  AcceptanceReviewAnnotation,
   VerifierType,
   VerifyCheckItem,
   VerifyEvidence,
@@ -146,6 +148,26 @@ export class VerifyService {
 
   rejectDelivery = (id: string, comment: string) =>
     lambdaClient.acceptance.reject.mutate({ comment, id });
+
+  /**
+   * The user's verdict on individual union checks — accept settles a check for
+   * good; reject records feedback the next round reads. A group "accept all"
+   * is the same call with many ids.
+   */
+  reviewChecks = (input: {
+    action: AcceptanceCheckReviewAction;
+    annotations?: AcceptanceReviewAnnotation[];
+    checkItemIds: string[];
+    comment?: string;
+    id: string;
+  }) => lambdaClient.acceptance.reviewChecks.mutate(input);
+
+  /**
+   * Feedback addressed to a check group (business category) — for concerns
+   * that belong to no single check yet must reach the next round.
+   */
+  addGroupFeedback = (input: { category: string; comment: string; id: string }) =>
+    lambdaClient.acceptance.addGroupFeedback.mutate(input);
 
   // ---- per-run plan ----
   getVerifyState = (operationId: string): Promise<VerifyStateResponse | null> =>

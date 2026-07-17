@@ -22,11 +22,16 @@ import { messengerPlatformRegistry } from '@/server/services/messenger/platforms
 import { type BotRuntimeStatus, type BotRuntimeStatusSnapshot } from '@/types/botRuntimeStatus';
 
 import type { ConnectionMode } from '../bot/platforms';
-import { platformRegistry, resolveConnectionMode } from '../bot/platforms';
+import {
+  extractWatchKeywordEntries,
+  platformRegistry,
+  resolveConnectionMode,
+} from '../bot/platforms';
 import { BOT_CONNECT_QUEUE_EXPIRE_MS, BotConnectQueue } from './botConnectQueue';
 import { createGatewayManager, getGatewayManager } from './GatewayManager';
 import {
   getMessageGatewayClient,
+  type MessageGatewayCapabilities,
   type MessageGatewayConnectionStatus,
 } from './MessageGatewayClient';
 import { BOT_RUNTIME_STATUSES, getBotRuntimeStatus, updateBotRuntimeStatus } from './runtimeStatus';
@@ -101,6 +106,19 @@ function mapGatewayStatusToRuntimeStatus(
 }
 
 const log = debug('lobe-server:service:gateway');
+
+/**
+ * Derive edge-filtering capabilities for a bot-channel connection from its
+ * settings. Monitoring is enabled purely by "has watch keywords configured":
+ * feature-access gating stays server-side (BotMessageRouter), so access
+ * changes never require a gateway reconnect and operators with existing
+ * rules are never cut off by a stale edge config.
+ */
+const resolveBotGatewayCapabilities = (
+  settings?: Record<string, unknown> | null,
+): MessageGatewayCapabilities => ({
+  messageMonitoring: { enabled: extractWatchKeywordEntries(settings ?? undefined).length > 0 },
+});
 
 const isVercel = !!process.env.VERCEL_ENV;
 
@@ -239,6 +257,7 @@ export class GatewayService {
           const result = await client.connect(
             {
               applicationId: provider.applicationId,
+              capabilities: resolveBotGatewayCapabilities(provider.settings),
               connectionId: provider.id,
               connectionMode,
               credentials: provider.credentials,
@@ -250,14 +269,16 @@ export class GatewayService {
           );
 
           // Gateway returns "connecting" for async persistent connections
-          // (e.g. Discord WebSocket), "connected" for sync webhook-mode.
+          // (e.g. Discord WebSocket), "connected" for sync webhook-mode. An
+          // `ensure` reconcile can also legitimately return "dormant" (the DO is
+          // sparse-polling and won't send a correcting callback), so map through
+          // the shared helper instead of collapsing every non-connected result
+          // to "starting" — otherwise a dormant connection is persisted as
+          // starting and never corrected.
           await updateBotRuntimeStatus({
             applicationId: provider.applicationId,
             platform,
-            status:
-              result.status === 'connected'
-                ? BOT_RUNTIME_STATUSES.connected
-                : BOT_RUNTIME_STATUSES.starting,
+            status: mapGatewayStatusToRuntimeStatus(result.status),
           });
 
           connected++;
@@ -832,6 +853,10 @@ export class GatewayService {
       const client = getMessageGatewayClient();
       await client.connect({
         applicationId: creds.applicationId,
+        // Messenger-owned connections never consume passive channel
+        // monitoring — the shared bot only reacts to DMs and explicit
+        // mentions, so the gateway may drop ordinary channel messages.
+        capabilities: { messageMonitoring: { enabled: false } },
         connectionId,
         // The user DO is purely an outbound surface for typing; no inbound
         // events come back through this connection. Webhook mode prevents the
@@ -909,6 +934,7 @@ export class GatewayService {
 
     await client.connect({
       applicationId: provider.applicationId,
+      capabilities: resolveBotGatewayCapabilities(provider.settings),
       connectionId: provider.id,
       connectionMode,
       credentials: provider.credentials,

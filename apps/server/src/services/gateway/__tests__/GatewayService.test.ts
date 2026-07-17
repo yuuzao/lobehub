@@ -77,6 +77,7 @@ vi.mock('../runtimeStatus', () => ({
   BOT_RUNTIME_STATUSES: {
     connected: 'connected',
     disconnected: 'disconnected',
+    dormant: 'dormant',
     failed: 'failed',
     queued: 'queued',
     starting: 'starting',
@@ -91,6 +92,10 @@ vi.mock('@/business/server/bot/featureAccess', () => ({
 }));
 
 vi.mock('../../bot/platforms', () => ({
+  extractWatchKeywordEntries: (settings?: Record<string, unknown>) =>
+    Array.isArray(settings?.watchKeywords)
+      ? settings.watchKeywords.filter((e: any) => typeof e?.keyword === 'string' && e.keyword)
+      : [],
   platformRegistry: {
     getPlatform: (platform: string) => ({ id: platform }),
     listPlatforms: () => [{ id: 'discord' }, { id: 'telegram' }, { id: 'wechat' }],
@@ -338,6 +343,39 @@ describe('GatewayService', () => {
         { ensure: true },
       );
       expect(mockUpdateBotRuntimeStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'starting' }),
+      );
+    });
+
+    it('persists a dormant ensure result as dormant, not starting', async () => {
+      // An `ensure` reconcile of a sparse-polling DO can legitimately return
+      // `dormant`; it must be mapped through the shared helper so it is not
+      // collapsed to `starting` (the DO sends no correcting callback).
+      mockFindEnabledByPlatform.mockImplementation(async (_db: unknown, platform: string) =>
+        platform === 'discord'
+          ? [
+              {
+                applicationId: 'app-1',
+                credentials: { token: 'x' },
+                id: 'prov-1',
+                settings: {},
+                userId: 'u1',
+              },
+            ]
+          : [],
+      );
+      mockResolveConnectionMode.mockReturnValue('websocket');
+      mockGatewayClient.getStatus.mockResolvedValue({
+        state: { status: 'disconnected' },
+      });
+      mockGatewayClient.connect.mockResolvedValue({ status: 'dormant' });
+
+      await service.ensureRunning();
+
+      expect(mockUpdateBotRuntimeStatus).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'dormant' }),
+      );
+      expect(mockUpdateBotRuntimeStatus).not.toHaveBeenCalledWith(
         expect.objectContaining({ status: 'starting' }),
       );
     });

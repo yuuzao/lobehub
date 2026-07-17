@@ -17,6 +17,7 @@ export default {
   'channel.paidFeature.badge': 'Pro',
   'channel.paidFeature.cta.personal': 'Upgrade',
   'channel.paidFeature.cta.workspace': 'Upgrade',
+  'channel.paidFeature.fieldLocked': 'Available on paid plans. Upgrade to configure this feature.',
   'channel.paidFeature.enforce.desc':
     '{{name}} is available on paid plans. Upgrade to a paid personal plan or a Pro / Business workspace to configure and keep this channel connected.',
   'channel.paidFeature.enforce.desc.personal':
@@ -208,8 +209,6 @@ export default {
   'channel.wechatQrWait': 'Open WeChat and scan the QR code to connect.',
   'channel.wechatBotId': 'Bot ID',
   'channel.wechatConnectedInfo': 'Connected WeChat Account',
-  'channel.wechatIdleNotice':
-    'If no users send messages for over 7 days, this connection will be automatically paused. To resume, click "Rebind via QR Code".',
   'channel.wechatManagedCredentials':
     'This channel is already connected through QR code authorization. Credentials are managed automatically.',
   'channel.wechatGenerateQrCode': 'Generate QR Code',
