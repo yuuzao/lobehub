@@ -103,14 +103,6 @@ export const UserLabSchema = z.object({
    */
   enableClaudeCodeSdk: z.boolean().optional(),
   /**
-   * enable the Fleet view (side-by-side running-task dashboard)
-   */
-  enableFleet: z.boolean().optional(),
-  /**
-   * fold a finished agent turn's process under a "已处理" header when its final answer is visible
-   */
-  enableFoldFinishedTurn: z.boolean().optional(),
-  /**
    * enable multi-agent group chat mode
    */
   enableGroupChat: z.boolean().optional(),
@@ -142,6 +134,11 @@ export const UserLabSchema = z.object({
    * enable the task delivery-acceptance (verify) config UI on the task detail
    */
   enableTaskVerify: z.boolean().optional(),
+  /**
+   * enable the per-topic acceptance tray above the composer (author a topic's
+   * delivery checklist inline)
+   */
+  enableTopicAcceptance: z.boolean().optional(),
 });
 
 export type UserLab = z.infer<typeof UserLabSchema>;
