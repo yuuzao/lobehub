@@ -39,9 +39,13 @@ export default {
   'agentNotFound.desc':
     'This agent does not exist or is no longer accessible — it may have been deleted or set to private by its owner.',
   'permission.configAccess.agentChatOnly':
-    'Only collaborators with Can edit can configure this Agent. You were returned to chat.',
+    'You can only use this Agent, not configure it. You were returned to chat.',
+  'permission.configAccess.agentRoleRestricted':
+    'Your workspace role cannot configure Agents. You were returned to chat.',
   'permission.configAccess.groupChatOnly':
-    'Only collaborators with Can edit can configure this Agent Group. You were returned to chat.',
+    'You can only use this Agent Group, not configure it. You were returned to chat.',
+  'permission.configAccess.groupRoleRestricted':
+    'Your workspace role cannot configure Agent Groups. You were returned to chat.',
   'agentNotFound.title': 'Agent Unavailable',
   'groupNotFound.desc':
     'This group does not exist or is no longer accessible — it may have been deleted or set to private by its owner.',
@@ -1670,7 +1674,7 @@ export default {
   'workingPanel.browser.tool.scroll': 'Scrolled page',
   'workingPanel.browser.tool.snapshot': 'Read page elements',
   'workingPanel.openMenu.configuration': 'Configuration',
-  'workingPanel.openMenu.terminal': 'Open Terminal',
+  'workingPanel.openMenu.terminal': 'Terminal',
   'workingPanel.openMenu.title': 'Open workspace panel',
   'workingPanel.openMenu.tools': 'Tools',
   'workingPanel.openMenu.workspace': 'Workspace',
