@@ -64,6 +64,22 @@ HttpOnly, so an empty `document.cookie` does not establish signed-out state.
 
 ## Project-specific recipes
 
+### Task CLI polling with seeded API-key auth
+
+**Situation:** A local acceptance run is driven through `lh task run` with the
+seeded `LOBEHUB_CLI_API_KEY`, and the test needs to observe the asynchronous
+repair lifecycle.
+
+**Doesn't work:** `lh task run <id> --follow` switches to `/webapi/*`, which
+requires OIDC and rejects API-key auth after the task has already started.
+Likewise, `lh acceptance view task:T-N` does not currently resolve a task
+identifier to its internal subject id.
+
+**Works:** Start the task without `--follow`, poll with `lh task view T-N`, and
+query the aggregate with `lh acceptance view task:<internal-task-id>`. The start
+response and task activity expose the operation and topic ids; the Acceptance
+bundle exposes the repair round and final rollup.
+
 ### Message-attached heterogeneous-agent errors
 
 Inject a temporary assistant message through
@@ -167,6 +183,27 @@ in the renderer graph, which makes Vite optimize and execute `vitest` in the app
 **Works:** keep the assertion under the consuming feature's test directory and
 import the locale resource there. Restart the isolated Electron instance after a
 bad scan because the optimized dependency graph can remain poisoned.
+
+### Shared agent-browser session names can cross-wire concurrent acceptance runs
+
+**Situation:** a Web acceptance run uses the adapter's default `lobehub-dev`
+session while another local run is active against a different port.
+
+**Doesn't work:** reusing `lobehub-dev` and trusting the URL printed immediately
+after `open`. Another process can steer the same session between commands, so a
+later click or screenshot lands on a different acceptance and port.
+
+**Works:** create a run-specific session name and load the seeded auth state
+directly:
+
+```bash
+RUN_SESSION=visualization-acceptance
+agent-browser --session "$RUN_SESSION" \
+  --state ~/.lobehub-agent-testing/web-state.json open "$SERVER_URL/acceptance"
+```
+
+Then assert `get url` and `app-probe.sh auth` on that exact session before
+capturing evidence.
 
 ## Detailed references
 

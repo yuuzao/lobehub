@@ -39,6 +39,7 @@ interface LocalFilePreviewKeyParams {
   allowExternalFile?: boolean;
   deviceId?: string;
   filePath: string;
+  resourceScope?: 'workspace';
   workingDirectory: string;
 }
 
@@ -909,6 +910,7 @@ export const localFileKeys = {
       allowExternalFile,
       deviceId,
       filePath,
+      resourceScope,
       workingDirectory,
     }: LocalFilePreviewKeyParams) => [
       'localFile:preview',
@@ -917,6 +919,7 @@ export const localFileKeys = {
       workingDirectory,
       accept ?? 'any',
       allowExternalFile ? 'external' : 'workspace',
+      resourceScope ?? 'single-file',
     ],
   ),
   projectIndex: def('localFile:projectIndex', (deviceId: string | undefined, dirPath: string) => [
@@ -948,6 +951,18 @@ export const onboardingKeys = {
     'onboarding:agentHistoryTopics',
     agentId,
   ]),
+  analysisStatus: def('onboarding:analysisStatus', () => ['onboarding:analysisStatus']),
+  profile: def('onboarding:profile', () => ['onboarding:profile']),
+  suggestedTasks: def('onboarding:suggestedTasks', () => ['onboarding:suggestedTasks']),
+  understandingSession: def('onboarding:understandingSession', (topicId: string) => [
+    'onboarding:understandingSession',
+    topicId,
+  ]),
+  understandingStart: def('onboarding:understandingStart', (topicId: string) => [
+    'onboarding:understandingStart',
+    topicId,
+  ]),
+  understandingTopic: def('onboarding:understandingTopic', () => ['onboarding:understandingTopic']),
 };
 
 // ---- agent home / profile / signal (kept off the `agent:` idb tier) -----
