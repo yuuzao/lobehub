@@ -710,6 +710,8 @@ export default {
     'Defines who this agent is, what it is responsible for, and how it works and responds. It serves as a core instruction in every conversation.',
   'settingAgent.prompt.editorPlaceholder':
     'Enter core instructions, press / to open the Slash Menu',
+  'settingAgent.prompt.mode.source': 'Markdown source',
+  'settingAgent.prompt.mode.visual': 'Visual editor',
   'settingAgent.prompt.placeholder': 'Enter agent instructions',
   'settingAgent.prompt.title': 'Core Instructions',
   'settingAgent.agentTools.add': 'Add Tool',
@@ -1067,6 +1069,13 @@ export default {
     'Development runtime environments for executing scripts and packages',
   'settingSystemTools.detecting': 'Detecting...',
   'settingSystemTools.redetect': 'Re-detect',
+  'settingSystemTools.shell.desc': 'Shell used when the agent runs local commands on this machine',
+  'settingSystemTools.shell.mode.auto': 'Automatic (PowerShell)',
+  'settingSystemTools.shell.mode.desc':
+    'PowerShell is used by default. Git Bash appears as an option when Git for Windows is installed. Current shell:',
+  'settingSystemTools.shell.mode.gitbash': 'Git Bash',
+  'settingSystemTools.shell.mode.title': 'Windows Shell',
+  'settingSystemTools.shell.title': 'Command Execution',
   'settingSystemTools.status.available': 'Available',
   'settingSystemTools.status.notDetected': 'Not detected',
   'settingSystemTools.status.unavailable': 'Unavailable',
@@ -2884,6 +2893,9 @@ When I am ___, I need ___
   'workspaceSetting.tab.general': 'General',
   'workspaceSetting.tab.members': 'Members',
   'workspaceSetting.storage.comingSoon': 'Workspace-scoped data import & export is coming soon.',
+  'workspaceSetting.storage.danger.reset.confirm.content':
+    'Every workspace setting goes back to its default, for everyone in the workspace. Agents, conversations, and files are not touched.',
+  'workspaceSetting.storage.danger.reset.confirm.ok': 'Reset Settings',
   'workspaceSetting.storage.danger.reset.desc':
     'Restore all workspace settings to defaults. Workspace data will not be deleted.',
   'workspaceSetting.storage.danger.reset.title': 'Reset Workspace Settings',
