@@ -29,9 +29,10 @@ import {
 import { workspaceHomeRouteMeta } from '@/features/Workspace/routeMeta';
 import {
   agentChannelRouteMeta,
+  agentPermissionRouteMeta,
   agentProfileRouteMeta,
   agentRouteMeta,
-  agentStatsRouteMeta,
+  agentStatisticsRouteMeta,
   topicsRouteMeta,
 } from '@/routes/(main)/agent/features/routeMeta';
 import { groupProfileRouteMeta, groupRouteMeta } from '@/routes/(main)/group/features/routeMeta';
@@ -150,11 +151,24 @@ export const sharedMainAreaChildren: RouteObject[] = [
           },
           {
             element: dynamicElement(
-              () => import('@/routes/(main)/agent/stats'),
-              'Desktop > Chat > Stats',
+              () => import('@/routes/(main)/agent/statistics'),
+              'Desktop > Chat > Statistics',
             ),
-            handle: { meta: agentStatsRouteMeta },
+            handle: { meta: agentStatisticsRouteMeta },
+            path: 'statistics',
+          },
+          // Legacy `/agent/:aid/stats` URLs — kept for deep-links.
+          {
+            element: redirectElement('../statistics'),
             path: 'stats',
+          },
+          {
+            element: dynamicElement(
+              () => import('@/routes/(main)/agent/permission'),
+              'Desktop > Chat > Permission',
+            ),
+            handle: { meta: agentPermissionRouteMeta },
+            path: 'permission',
           },
           {
             element: dynamicElement(
@@ -955,6 +969,13 @@ export const createMainAreaChildren = (): RouteObject[] => [
                   'Desktop > Workspace > Settings > Billing',
                 ),
                 path: 'billing',
+              },
+              {
+                element: dynamicElement(
+                  () => import('@/routes/(main)/[workspaceSlug]/settings/budget'),
+                  'Desktop > Workspace > Settings > Budget',
+                ),
+                path: 'budget',
               },
               {
                 element: dynamicElement(

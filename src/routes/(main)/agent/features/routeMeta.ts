@@ -4,6 +4,7 @@ import {
   MessageSquare,
   MessagesSquareIcon,
   RadioTowerIcon,
+  UsersIcon,
 } from 'lucide-react';
 import { lazy } from 'react';
 
@@ -25,9 +26,14 @@ const ChannelDynamicMeta = lazy(() =>
     default: module.ChannelDynamicMeta,
   })),
 );
-const StatsDynamicMeta = lazy(() =>
+const StatisticsDynamicMeta = lazy(() =>
   import('@/features/RouteMeta/AgentDynamicMeta').then((module) => ({
-    default: module.StatsDynamicMeta,
+    default: module.StatisticsDynamicMeta,
+  })),
+);
+const PermissionDynamicMeta = lazy(() =>
+  import('@/features/RouteMeta/AgentDynamicMeta').then((module) => ({
+    default: module.PermissionDynamicMeta,
   })),
 );
 
@@ -55,8 +61,14 @@ export const agentChannelRouteMeta = routeMeta({
   titleKey: 'navigation.channels',
 });
 
-export const agentStatsRouteMeta = routeMeta({
-  DynamicMeta: StatsDynamicMeta,
+export const agentStatisticsRouteMeta = routeMeta({
+  DynamicMeta: StatisticsDynamicMeta,
   icon: ChartColumnBigIcon,
   titleKey: 'navigation.stats',
+});
+
+export const agentPermissionRouteMeta = routeMeta({
+  DynamicMeta: PermissionDynamicMeta,
+  icon: UsersIcon,
+  titleKey: 'navigation.permission',
 });
