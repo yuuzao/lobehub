@@ -13,7 +13,7 @@ import { BUILTIN_AGENT_SLUGS, getAgentRuntimeConfig } from '@lobechat/builtin-ag
 import { builtinSkills } from '@lobechat/builtin-skills';
 import { CloudSandboxManifest } from '@lobechat/builtin-tool-cloud-sandbox';
 import { LobeAgentIdentifier, LobeAgentManifest } from '@lobechat/builtin-tool-lobe-agent';
-import { LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
+import { getShellSyntaxGuidance, LocalSystemManifest } from '@lobechat/builtin-tool-local-system';
 import { MessageToolIdentifier } from '@lobechat/builtin-tool-message';
 import { PageAgentIdentifier } from '@lobechat/builtin-tool-page-agent';
 import type { DeviceAttachment } from '@lobechat/builtin-tool-remote-device';
@@ -238,18 +238,23 @@ function formatErrorForMetadata(error: unknown): Record<string, any> | undefined
   return { message: String(error) };
 }
 
-const getVisualAvailabilityFromFileTypes = (fileTypes: string[]) => ({
+const getMediaAvailabilityFromFileTypes = (fileTypes: string[]) => ({
+  hasAudios: fileTypes.some((fileType) => fileType.startsWith('audio')),
   hasImages: fileTypes.some((fileType) => fileType.startsWith('image')),
   hasVideos: fileTypes.some((fileType) => fileType.startsWith('video')),
 });
 
-interface VisualAvailabilityMessage {
+interface MediaAvailabilityMessage {
+  audioList?: unknown[];
   imageList?: unknown[];
   role?: string;
   videoList?: unknown[];
 }
 
-const getVisualAvailabilityFromMessages = (messages: VisualAvailabilityMessage[]) => ({
+const getMediaAvailabilityFromMessages = (messages: MediaAvailabilityMessage[]) => ({
+  hasAudios: messages.some(
+    (message) => message.role === 'user' && (message.audioList?.length ?? 0) > 0,
+  ),
   hasImages: messages.some(
     (message) => message.role === 'user' && (message.imageList?.length ?? 0) > 0,
   ),
@@ -258,9 +263,11 @@ const getVisualAvailabilityFromMessages = (messages: VisualAvailabilityMessage[]
   ),
 });
 
-const isVisualUnderstandingConfigured = () => {
+const isMultimodalUnderstandingConfigured = () => {
   try {
-    return !!toolsEnv.VISUAL_UNDERSTANDING_PROVIDER && !!toolsEnv.VISUAL_UNDERSTANDING_MODEL;
+    return (
+      !!toolsEnv.MULTIMODAL_UNDERSTANDING_PROVIDER && !!toolsEnv.MULTIMODAL_UNDERSTANDING_MODEL
+    );
   } catch {
     // The env proxy rejects server-only keys in client-like runtimes; treat that as disabled.
     return false;
@@ -3094,31 +3101,36 @@ export class AiAgentService {
         attachedFileTypes = fileRecords.map((file) => file.fileType || '');
       }
       const inputFileTypes = [...externalFileTypes, ...attachedFileTypes];
-      const inputVisualAvailability = getVisualAvailabilityFromFileTypes(inputFileTypes);
-      let historyVisualAvailability = { hasImages: false, hasVideos: false };
-      const visualUnderstandingConfigured = isVisualUnderstandingConfigured();
+      const inputMediaAvailability = getMediaAvailabilityFromFileTypes(inputFileTypes);
+      let historyMediaAvailability = { hasAudios: false, hasImages: false, hasVideos: false };
+      const multimodalUnderstandingConfigured = isMultimodalUnderstandingConfigured();
 
       if (
-        visualUnderstandingConfigured &&
-        ((!modelAbilities?.vision && !inputVisualAvailability.hasImages) ||
-          (!modelAbilities?.video && !inputVisualAvailability.hasVideos))
+        multimodalUnderstandingConfigured &&
+        ((!modelAbilities?.audio && !inputMediaAvailability.hasAudios) ||
+          (!modelAbilities?.vision && !inputMediaAvailability.hasImages) ||
+          (!modelAbilities?.video && !inputMediaAvailability.hasVideos))
       ) {
-        historyVisualAvailability = getVisualAvailabilityFromMessages(await loadHistoryMessages());
+        historyMediaAvailability = getMediaAvailabilityFromMessages(await loadHistoryMessages());
       }
 
+      const needsAudioUnderstanding =
+        (inputMediaAvailability.hasAudios || historyMediaAvailability.hasAudios) &&
+        !modelAbilities?.audio;
       const needsImageUnderstanding =
-        (inputVisualAvailability.hasImages || historyVisualAvailability.hasImages) &&
+        (inputMediaAvailability.hasImages || historyMediaAvailability.hasImages) &&
         !modelAbilities?.vision;
       const needsVideoUnderstanding =
-        (inputVisualAvailability.hasVideos || historyVisualAvailability.hasVideos) &&
+        (inputMediaAvailability.hasVideos || historyMediaAvailability.hasVideos) &&
         !modelAbilities?.video;
-      const shouldEnableVisualUnderstanding =
-        visualUnderstandingConfigured && (needsImageUnderstanding || needsVideoUnderstanding);
+      const shouldEnableMultimodalUnderstanding =
+        multimodalUnderstandingConfigured &&
+        (needsAudioUnderstanding || needsImageUnderstanding || needsVideoUnderstanding);
       agentPlugins = [
         ...agentPlugins,
         ...(hasTopicReference ? ['lobe-topic-reference'] : []),
         ...(isBotConversation ? [MessageToolIdentifier] : []),
-        ...(shouldEnableVisualUnderstanding ? [LobeAgentManifest.identifier] : []),
+        ...(shouldEnableMultimodalUnderstanding ? [LobeAgentManifest.identifier] : []),
       ];
 
       // Resolve THE device decision for this run. All rules live in
@@ -3591,13 +3603,14 @@ export class AiAgentService {
         if (!systemInfo) return {};
         const device = onlineDevices.find((d) => d.deviceId === deviceId);
         log('execAgent: fetched device system info for %s', deviceId);
+        // Devices that don't report defaultShell run an older client whose
+        // runner still hardcodes cmd.exe on Windows — describe that honestly
+        // instead of the new PowerShell default.
+        const defaultShell =
+          systemInfo.defaultShell ?? (device?.platform === 'win32' ? 'cmd.exe' : '/bin/sh');
         return {
           arch: systemInfo.arch,
-          // Devices that don't report defaultShell run an older client whose
-          // runner still hardcodes cmd.exe on Windows — describe that honestly
-          // instead of the new PowerShell default.
-          defaultShell:
-            systemInfo.defaultShell ?? (device?.platform === 'win32' ? 'cmd.exe' : '/bin/sh'),
+          defaultShell,
           desktopPath: systemInfo.desktopPath,
           documentsPath: systemInfo.documentsPath,
           downloadsPath: systemInfo.downloadsPath,
@@ -3606,6 +3619,9 @@ export class AiAgentService {
           musicPath: systemInfo.musicPath,
           picturesPath: systemInfo.picturesPath,
           platform: device?.platform ?? 'unknown',
+          // Keep the syntax guidance consistent with the shell named above —
+          // the system role references both placeholders in one sentence.
+          shellSyntaxGuidance: getShellSyntaxGuidance(defaultShell),
           userDataPath: systemInfo.userDataPath,
           videosPath: systemInfo.videosPath,
           // `workingDirectory` is intentionally NOT taken from the live device
