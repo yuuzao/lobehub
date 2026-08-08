@@ -570,19 +570,32 @@ export class AiAgentService {
   private readonly threadModel: ThreadModel;
   private readonly topicModel: TopicModel;
   private readonly agentRuntimeService: AgentRuntimeService;
-  private readonly marketService: MarketService;
+  private _marketService?: MarketService;
   private readonly composioService: ComposioService;
 
   private readonly workspaceId?: string;
+  /**
+   * When the caller authenticated with a restricted API key, the unrestricted
+   * user JWT minted for gateway WebSocket auth must not be handed back — it
+   * passes `oidcAuth` as non-API-key auth and would bypass the scope guard
+   * entirely.
+   */
+  private readonly withholdGatewayToken: boolean;
 
   constructor(
     db: LobeChatDatabase,
     userId: string,
-    options?: { runtimeOptions?: AgentRuntimeServiceOptions; workspaceId?: string },
+    options?: {
+      marketAccessToken?: string;
+      runtimeOptions?: AgentRuntimeServiceOptions;
+      withholdGatewayToken?: boolean;
+      workspaceId?: string;
+    },
   ) {
     this.userId = userId;
     this.db = db;
     this.workspaceId = options?.workspaceId;
+    this.withholdGatewayToken = options?.withholdGatewayToken ?? false;
     const wsId = this.workspaceId;
     this.agentDocumentsService = new AgentDocumentsService(db, userId, wsId);
     this.agentModel = new AgentModel(db, userId, wsId);
@@ -613,8 +626,35 @@ export class AiAgentService {
       },
       workspaceId: wsId,
     });
-    this.marketService = new MarketService({ userInfo: { userId } });
+
+    // marketService is used for creds, sandbox, skills etc.
+    // Read accessToken from DB; if options.marketAccessToken is provided, use it as override.
+    if (options?.marketAccessToken) {
+      this._marketService = new MarketService({
+        accessToken: options.marketAccessToken,
+        userInfo: { userId },
+      });
+    }
     this.composioService = new ComposioService({ db, userId, workspaceId: wsId });
+  }
+
+  private async getMarketService(): Promise<MarketService> {
+    if (this._marketService) return this._marketService;
+
+    let accessToken: string | undefined;
+    try {
+      const userModel = new UserModel(this.db, this.userId);
+      const settings = await userModel.getUserSettings();
+      accessToken = (settings?.market as any)?.accessToken;
+    } catch {
+      // non-fatal — MarketService will fall back to trustedClientToken
+    }
+
+    this._marketService = new MarketService({
+      accessToken,
+      userInfo: { userId: this.userId },
+    });
+    return this._marketService;
   }
 
   private async resolveOperationTaskId(
@@ -1372,6 +1412,11 @@ export class AiAgentService {
       agentConfig.chatConfig =
         resolveSubAgentChatConfig(agentConfig.chatConfig, chatConfigOverride) ??
         agentConfig.chatConfig;
+      // Keep the raw override so the LLM context hints can re-apply explicit
+      // sub-agent reasoning choices over the user's model-instance defaults —
+      // the merged chatConfig alone can't distinguish them from stale agent
+      // values, which the reasoning-config migration ignores.
+      agentConfig.subAgentChatConfigOverride = chatConfigOverride;
     }
 
     // Persistence-attribution agent id. Background Agent Signal runs (memory /
@@ -2149,11 +2194,12 @@ export class AiAgentService {
       const githubCredKey =
         agentConfig.agencyConfig?.heterogeneousProvider?.env?.GITHUB_CRED_KEY ?? 'github';
       try {
+        const marketService = await this.getMarketService();
         // Inside a workspace, the GitHub cred must come from the workspace's shared
         // organization credentials, not the operator's personal creds.
         const credsAccessor = this.workspaceId
-          ? this.marketService.market.organizations.creds({ workspaceId: this.workspaceId })
-          : this.marketService.market.creds;
+          ? marketService.market.organizations.creds({ workspaceId: this.workspaceId })
+          : marketService.market.creds;
         const list = await credsAccessor.list();
         const cred = list.data?.find((c: { key: string }) => c.key === githubCredKey);
         if (cred) {
@@ -2637,6 +2683,7 @@ export class AiAgentService {
           // `aiAgent` import. Only this cloud-CLI branch needs it.
           const { spawnHeteroSandbox } =
             await import('@/server/services/heterogeneousAgent/sandboxRunner');
+          const marketService = await this.getMarketService();
           // The sandbox authenticates its nested `lh` calls with this JWT. The
           // narrow `hetero-operation` token (used for the device-dispatch path
           // above) is rejected by `oidcAuth`, so CC capabilities that hit
@@ -2651,7 +2698,7 @@ export class AiAgentService {
             agentType: heteroType as 'claude-code' | 'codex',
             args: heteroExecArgs,
             jwt: sandboxJwt,
-            marketService: this.marketService,
+            marketService,
           }).catch(async (err) => {
             // Fire-and-forget: execAgent has already returned `autoStarted`, and
             // the sandbox never reached the point of calling heteroFinish. Drive
@@ -2673,10 +2720,12 @@ export class AiAgentService {
       }
 
       let gatewayToken: string | undefined;
-      try {
-        gatewayToken = await signUserJWT(this.userId);
-      } catch {
-        // non-critical
+      if (!this.withholdGatewayToken) {
+        try {
+          gatewayToken = await signUserJWT(this.userId);
+        } catch {
+          // non-critical
+        }
       }
 
       return {
@@ -3001,7 +3050,8 @@ export class AiAgentService {
 
       // 5c. Fetch LobeHub Skills manifests
       try {
-        lobehubSkillManifests = await this.marketService.getLobehubSkillManifests();
+        const marketService = await this.getMarketService();
+        lobehubSkillManifests = await marketService.getLobehubSkillManifests();
       } catch (error) {
         log('execAgent: failed to fetch lobehub skill manifests: %O', error);
       }
@@ -4436,10 +4486,12 @@ export class AiAgentService {
 
       // Generate a short-lived JWT for Gateway WebSocket authentication
       let gatewayToken: string | undefined;
-      try {
-        gatewayToken = await signUserJWT(this.userId);
-      } catch {
-        log('execAgent: failed to sign gateway JWT, gateway auth will be unavailable');
+      if (!this.withholdGatewayToken) {
+        try {
+          gatewayToken = await signUserJWT(this.userId);
+        } catch {
+          log('execAgent: failed to sign gateway JWT, gateway auth will be unavailable');
+        }
       }
 
       return {
