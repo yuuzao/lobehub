@@ -1,6 +1,7 @@
 export default {
   'ModelSwitch.title': 'Model',
   'active': 'Active',
+  'audioPlayer.download': 'Download audio',
   'audioPlayer.pause': 'Pause audio',
   'audioPlayer.play': 'Play audio',
   'agentBuilder.installPlugin.authRequired': 'Cloud MCP requires sign-in to continue',
@@ -320,6 +321,43 @@ export default {
   'heteroAgent.claudeQuota.accountActive': 'In use',
   'heteroAgent.claudeQuota.accountSwitch': 'Switch',
   'heteroAgent.claudeQuota.accounts': 'Accounts',
+  'heteroAgent.claudeQuota.calendar.burnout.exhausted': 'Exhausted — resets {{time}}',
+  'heteroAgent.claudeQuota.calendar.burnout.safe':
+    'On current pace this window ends around {{percent}}%',
+  'heteroAgent.claudeQuota.calendar.burnout.willExhaust':
+    'On current pace, quota runs out around {{time}}',
+  'heteroAgent.claudeQuota.calendar.capacityUsed': 'Capacity used',
+  'heteroAgent.claudeQuota.calendar.dayShare': 'Used {{percent}}% of this window',
+  'heteroAgent.claudeQuota.calendar.dayTokens': '{{tokens}} tokens · {{cost}}',
+  'heteroAgent.claudeQuota.calendar.accountUnavailable':
+    'The quota account for this snapshot is unavailable',
+  'heteroAgent.claudeQuota.calendar.currentWindow': 'Current window',
+  'heteroAgent.claudeQuota.calendar.empty':
+    'Not enough usage history yet — run a few tasks and check back.',
+  'heteroAgent.claudeQuota.calendar.entry': 'Usage calendar',
+  'heteroAgent.claudeQuota.calendar.legendLess': 'Light',
+  'heteroAgent.claudeQuota.calendar.legendMore': 'Heavy',
+  'heteroAgent.claudeQuota.calendar.legendReset': 'Window reset',
+  'heteroAgent.claudeQuota.calendar.monthSpend': 'Daily spend',
+  'heteroAgent.claudeQuota.calendar.noLedgerSpend': 'No token usage recorded in this window',
+  'heteroAgent.claudeQuota.calendar.noLedgerSpendHint':
+    'Token history is only recorded for runs started in LobeHub after usage tracking was enabled. Earlier usage and runs started directly from the terminal cannot be backfilled.',
+  'heteroAgent.claudeQuota.calendar.noLedgerSpendShort': 'History not recorded',
+  'heteroAgent.claudeQuota.calendar.partialCost': 'at least {{cost}}',
+  'heteroAgent.claudeQuota.calendar.pace': 'Even pace',
+  'heteroAgent.claudeQuota.calendar.pastWindow': 'Last observed window',
+  'heteroAgent.claudeQuota.calendar.rateLimited': 'Rate limited',
+  'heteroAgent.claudeQuota.calendar.resetAt': 'Window resets at {{time}}',
+  'heteroAgent.claudeQuota.calendar.sessionWindow': 'Session (5h)',
+  'heteroAgent.claudeQuota.calendar.sessionHistory': '5-hour windows',
+  'heteroAgent.claudeQuota.calendar.sessionHistoryHint': 'Recent 7 days · each cell is one window',
+  'heteroAgent.claudeQuota.calendar.title': 'Claude Code usage calendar',
+  'heteroAgent.claudeQuota.calendar.usedOfWindow': 'of this window used',
+  'heteroAgent.claudeQuota.calendar.weeklyHistory': 'Weekly windows',
+  'heteroAgent.claudeQuota.calendar.weeklyHistoryHint': 'Recent windows',
+  'heteroAgent.claudeQuota.calendar.windowSpend': '{{tokens}} tokens · {{cost}} this window',
+  'heteroAgent.claudeQuota.calendar.unpricedCost': 'cost unavailable',
+  'heteroAgent.claudeQuota.calendar.windowUtilization': '{{percent}}% used',
   'heteroAgent.claudeQuota.manage.addHint':
     'Sign in to the Claude Code CLI and the account shows up here automatically.',
   'heteroAgent.claudeQuota.manage.autoNoAccount': 'No eligible account — enable one below.',
@@ -797,6 +835,12 @@ export default {
   'codexInstallGuide.menuNotification.title': 'Codex CLI not found',
   'codexInstallGuide.reason': 'LobeHub could not start Codex: {{message}}',
   'codexInstallGuide.title': 'Install Codex CLI',
+  'workingDirectoryGuide.actions.retry': 'Retry',
+  'workingDirectoryGuide.desc':
+    'The working directory saved for this conversation no longer exists.',
+  'workingDirectoryGuide.hint':
+    'Choose an existing folder from the working directory selector, then retry this message.',
+  'workingDirectoryGuide.title': 'Working directory unavailable',
   'opencodeInstallGuide.actions.openDocs': 'Open Install Guide',
   'opencodeInstallGuide.actions.openSystemTools': 'Open System Tools',
   'opencodeInstallGuide.afterInstall':
