@@ -15,9 +15,19 @@ import { ChatGroupModel } from '@/database/models/chatGroup';
 import { ResourcePermissionModel } from '@/database/models/resourcePermission';
 import { TOPIC_COMMENT_TRANSFER_HAS_FOREIGN_AUTHORS } from '@/database/models/topicComment';
 import { UserModel } from '@/database/models/user';
-import { AgentGroupRepository } from '@/database/repositories/agentGroup';
-import { DEFAULT_RESOURCE_ACCESS_LEVELS, RESOURCE_ACCESS_LEVELS_BY_TYPE } from '@/database/schemas';
+import {
+  AgentGroupRepository,
+  GROUP_HAS_INACCESSIBLE_MEMBER,
+} from '@/database/repositories/agentGroup';
+import type { ResourceAccessLevel } from '@/database/schemas';
+import {
+  DEFAULT_RESOURCE_ACCESS_LEVELS,
+  LEGACY_VIEWER_ACCESS_LEVELS,
+  RESOURCE_ACCESS_LEVELS_BY_TYPE,
+} from '@/database/schemas';
+import type { LobeChatDatabase } from '@/database/type';
 import { type ChatGroupConfig } from '@/database/types/chatGroup';
+import { GROUP_MEMBER_ROLES } from '@/database/utils/groupMembership';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { AgentGroupService } from '@/server/services/agentGroup';
@@ -41,6 +51,7 @@ import {
   redactGroupConfig,
   type ResourceConfigAccess,
 } from './_helpers/resourceConfigGuard';
+import { getWorkspaceGroupVirtualAgentIds } from './_helpers/workspaceAgentGuard';
 
 const resourceConfigGuardCtx = (ctx: {
   serverDB: Parameters<typeof getResourceConfigAccess>[0]['db'];
@@ -156,6 +167,45 @@ const agentGroupProcedure = wsCompatProcedure.use(serverDatabase).use(async (opt
 // Write variant gates viewers out of chat-group mutations (create/update/
 // delete + member adds/removes). Reads keep the bare proc.
 const agentGroupProcedureWrite = agentGroupProcedure.use(withScopedPermission('agent:update'));
+
+/**
+ * Write a group's access level onto the group AND the group-owned virtual
+ * agents (supervisor + generated members).
+ *
+ * The cascade is not decorative: `assertCanEditResource` authorizes an agent by
+ * that agent's OWN ACL, with no parent-group term. A virtual agent left without
+ * a row falls back to the agent default (`edit`), so publishing a group as
+ * `use`/`view` while skipping the cascade leaves its supervisor editable by
+ * every member who can resolve its id — the group restriction would apply to
+ * the group resource only. Mirrors `resourcePermission.setGeneralAccess`;
+ * standalone agents linked into the group keep their own ACL.
+ */
+const applyGroupAccessLevel = async ({
+  accessLevel,
+  ctx,
+  groupId,
+  permissionModel,
+  workspaceId,
+}: {
+  accessLevel: ResourceAccessLevel;
+  ctx: { serverDB: LobeChatDatabase; userId: string };
+  groupId: string;
+  permissionModel: ResourcePermissionModel;
+  workspaceId: string;
+}): Promise<void> => {
+  const virtualAgentIds = await getWorkspaceGroupVirtualAgentIds({
+    db: ctx.serverDB,
+    groupId,
+    workspaceId,
+  });
+
+  await Promise.all([
+    permissionModel.setAccessLevel('agentGroup', groupId, accessLevel, ctx.userId),
+    ...virtualAgentIds.map((agentId) =>
+      permissionModel.setAccessLevel('agent', agentId, accessLevel, ctx.userId),
+    ),
+  ]);
+};
 
 export const agentGroupRouter = router({
   addAgentsToGroup: agentGroupProcedureWrite
@@ -677,6 +727,19 @@ export const agentGroupRouter = router({
       }
     }),
 
+  /**
+   * Members these groups only reference (the roster's `External` rows).
+   *
+   * Asked before a transfer: those agents stay in the source scope and the
+   * group takes clones of them instead, which is a visible enough change that
+   * the user should agree to it up front.
+   */
+  listReferencedMembers: agentGroupProcedure
+    .input(z.object({ groupIds: z.array(z.string()).min(1).max(100) }))
+    .query(async ({ input, ctx }) => {
+      return ctx.agentGroupRepo.listReferencedMembers([...new Set(input.groupIds)]);
+    }),
+
   transferGroup: agentGroupProcedureWrite
     .input(
       z.object({
@@ -773,6 +836,15 @@ export const agentGroupRouter = router({
             message: "Only workspace owners can transfer a group carrying others' content",
           });
         }
+        if (error instanceof Error && error.message === GROUP_HAS_INACCESSIBLE_MEMBER) {
+          throw new TRPCError({
+            // No group or member id in the payload: which member is hidden is
+            // exactly what the caller is not entitled to learn.
+            cause: { data: { code: TransferErrorCode.GroupHasInaccessibleMember } },
+            code: 'FORBIDDEN',
+            message: 'This group includes a member you do not have access to',
+          });
+        }
         if (error instanceof Error && error.message === AGENT_COPY_IN_PROGRESS) {
           throw new TRPCError({
             cause: { data: { code: TransferErrorCode.CopyInProgress } },
@@ -807,17 +879,29 @@ export const agentGroupRouter = router({
         );
       }
       if (input.targetWorkspaceId && input.targetVisibility === 'public') {
+        // A released client's two-valued `viewer` is an explicit "less than
+        // editor" choice, so it resolves through the legacy map rather than the
+        // default (which is `edit`); saying nothing at all still means "what a
+        // newly created group would get".
         const targetAccessLevel =
           input.targetAccessLevel ??
-          (input.targetGeneralAccess === 'editor'
-            ? 'edit'
+          (input.targetGeneralAccess
+            ? input.targetGeneralAccess === 'editor'
+              ? 'edit'
+              : LEGACY_VIEWER_ACCESS_LEVELS.agentGroup
             : DEFAULT_RESOURCE_ACCESS_LEVELS.agentGroup);
-        await new ResourcePermissionModel(ctx.serverDB, input.targetWorkspaceId).setAccessLevel(
-          'agentGroup',
-          input.groupId,
-          targetAccessLevel,
-          ctx.userId,
-        );
+        // `transferToWorkspace` makes the moved supervisor / generated members
+        // public in the target too, so they need the same cascade as the
+        // publish paths — otherwise their own ACL falls back to the agent
+        // default (`edit`) and target members can edit the owned agents of a
+        // use/view-only group.
+        await applyGroupAccessLevel({
+          accessLevel: targetAccessLevel,
+          ctx,
+          groupId: input.groupId,
+          permissionModel: new ResourcePermissionModel(ctx.serverDB, input.targetWorkspaceId),
+          workspaceId: input.targetWorkspaceId,
+        });
       }
 
       return result;
@@ -831,7 +915,12 @@ export const agentGroupRouter = router({
         updates: z.object({
           enabled: z.boolean().optional(),
           order: z.number().optional(),
-          role: z.string().optional(),
+          // Closed set rather than free text: `role` decides how the runtime
+          // treats a member, and `supervisor` in particular carries the
+          // lifecycle invariant the delete/transfer paths rely on. An unknown
+          // string here used to be accepted and then quietly behave as
+          // "not a supervisor" everywhere.
+          role: z.enum(GROUP_MEMBER_ROLES).optional(),
         }),
       }),
     )
@@ -855,7 +944,12 @@ export const agentGroupRouter = router({
    * back to `private`. Restricted to the creator's own still-private group.
    */
   publishGroupToWorkspace: agentGroupProcedureWrite
-    .input(z.object({ id: z.string() }))
+    .input(
+      z.object({
+        accessLevel: z.enum(RESOURCE_ACCESS_LEVELS_BY_TYPE.agentGroup).optional(),
+        id: z.string(),
+      }),
+    )
     .mutation(async ({ input, ctx }) => {
       // Same rule `setGroupVisibility` enforces, on the other route to the same
       // transition: a private group may hold the creator's private member
@@ -875,12 +969,22 @@ export const agentGroupRouter = router({
 
       const result = await ctx.chatGroupModel.publishToWorkspace(input.id);
       if (ctx.workspaceId) {
-        await new ResourcePermissionModel(ctx.serverDB, ctx.workspaceId).setAccessLevel(
-          'agentGroup',
-          input.id,
-          DEFAULT_RESOURCE_ACCESS_LEVELS.agentGroup,
-          ctx.userId,
-        );
+        const permissionModel = new ResourcePermissionModel(ctx.serverDB, ctx.workspaceId);
+        // Same rule as `publishAgentToWorkspace`: an explicit request wins;
+        // otherwise keep whatever the creator already chose on the Permission
+        // page while the group was still private — rewriting the default here
+        // would silently discard that decision.
+        const accessLevel =
+          input.accessLevel ??
+          (await permissionModel.getAccessLevel('agentGroup', input.id)) ??
+          DEFAULT_RESOURCE_ACCESS_LEVELS.agentGroup;
+        await applyGroupAccessLevel({
+          accessLevel,
+          ctx,
+          groupId: input.id,
+          permissionModel,
+          workspaceId: ctx.workspaceId,
+        });
       }
       return result;
     }),
@@ -971,19 +1075,24 @@ export const agentGroupRouter = router({
       const updated = await ctx.chatGroupModel.setVisibility(input.id, input.visibility);
       if (!updated) throw new TRPCError({ code: 'NOT_FOUND', message: 'Group not found' });
 
-      const accessLevel =
-        input.visibility === 'private'
-          ? 'edit'
-          : (input.accessLevel ?? DEFAULT_RESOURCE_ACCESS_LEVELS.agentGroup);
+      let accessLevel: ResourceAccessLevel;
       if (input.visibility === 'private') {
+        accessLevel = 'edit';
         await permissionModel.removeAll('agentGroup', input.id);
       } else {
-        await permissionModel.setAccessLevel(
-          'agentGroup',
-          input.id,
-          input.accessLevel ?? DEFAULT_RESOURCE_ACCESS_LEVELS.agentGroup,
-          ctx.userId,
-        );
+        // Same rule as `publishGroupToWorkspace`: promotion keeps a level the
+        // creator already set while private instead of resetting to the default.
+        accessLevel =
+          input.accessLevel ??
+          (await permissionModel.getAccessLevel('agentGroup', input.id)) ??
+          DEFAULT_RESOURCE_ACCESS_LEVELS.agentGroup;
+        await applyGroupAccessLevel({
+          accessLevel,
+          ctx,
+          groupId: input.id,
+          permissionModel,
+          workspaceId: ctx.workspaceId,
+        });
       }
 
       return buildResourcePermissionState({

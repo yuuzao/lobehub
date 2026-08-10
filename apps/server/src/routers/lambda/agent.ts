@@ -11,7 +11,7 @@ import {
 } from '@/business/server/agent-transfer/jobRunner';
 import { withScopedPermission } from '@/business/server/trpc-middlewares/rbacPermission';
 import { wsCompatProcedure } from '@/business/server/trpc-middlewares/workspaceAuth';
-import { AgentModel } from '@/database/models/agent';
+import { AgentModel, AgentOwnedByGroupError } from '@/database/models/agent';
 import { AGENT_COPY_IN_PROGRESS } from '@/database/models/agentCopyJob';
 import {
   AGENT_TRANSFER_IN_PROGRESS,
@@ -27,7 +27,11 @@ import { TopicModel } from '@/database/models/topic';
 import { TOPIC_COMMENT_TRANSFER_HAS_FOREIGN_AUTHORS } from '@/database/models/topicComment';
 import { UserModel } from '@/database/models/user';
 import type { ResourceAccessLevel } from '@/database/schemas';
-import { DEFAULT_RESOURCE_ACCESS_LEVELS, RESOURCE_ACCESS_LEVELS_BY_TYPE } from '@/database/schemas';
+import {
+  DEFAULT_RESOURCE_ACCESS_LEVELS,
+  LEGACY_VIEWER_ACCESS_LEVELS,
+  RESOURCE_ACCESS_LEVELS_BY_TYPE,
+} from '@/database/schemas';
 import { router } from '@/libs/trpc/lambda';
 import { serverDatabase } from '@/libs/trpc/lambda/middleware';
 import { AgentService } from '@/server/services/agent';
@@ -841,6 +845,23 @@ export const agentRouter = router({
     }),
 
   /**
+   * What moving these agents would do to the chat groups they are in.
+   *
+   * Asked before the move, because both outcomes are invisible otherwise: a
+   * transfer drops every group link the agent holds — historically without a
+   * word — and a group-owned agent cannot be moved at all. The mutation
+   * enforces the second case regardless; this endpoint exists so the user
+   * learns about it while they can still choose differently.
+   */
+  getGroupMembershipImpact: agentProcedure
+    .input(z.object({ agentIds: z.array(z.string()).min(1).max(100) }))
+    .query(async ({ input, ctx }) =>
+      // Reports only on agents the caller can see — the model does that scoping
+      // itself, because the guard path deliberately does not.
+      ctx.agentModel.getGroupMembershipImpact(input.agentIds),
+    ),
+
+  /**
    * The user opened a topic whose history is still migrating — jump it to the
    * front of the backfill queue. Returns whether the topic was still pending
    * (false → already migrated, the client can refetch messages immediately).
@@ -965,6 +986,15 @@ export const agentRouter = router({
             message: "Only workspace owners can transfer an agent carrying others' conversations",
           });
         }
+        if (error instanceof AgentOwnedByGroupError) {
+          throw new TRPCError({
+            // The group list travels with the code: "this agent belongs to a
+            // group" is only actionable once the user knows which group.
+            cause: { data: { code: TransferErrorCode.AgentOwnedByGroup, groups: error.groups } },
+            code: 'CONFLICT',
+            message: 'This agent belongs to a chat group and cannot be moved on its own',
+          });
+        }
         if (error instanceof Error && error.message === AGENT_COPY_IN_PROGRESS) {
           throw new TRPCError({
             cause: { data: { code: TransferErrorCode.CopyInProgress } },
@@ -993,9 +1023,17 @@ export const agentRouter = router({
         );
       }
       if (input.targetWorkspaceId && input.targetVisibility === 'public') {
+        // A released client's two-valued `viewer` is an explicit "less than
+        // editor" choice, so it resolves through the legacy map rather than the
+        // default (which is `edit`); saying nothing at all still means "what a
+        // newly created agent would get".
         const targetAccessLevel =
           input.targetAccessLevel ??
-          (input.targetGeneralAccess === 'editor' ? 'edit' : DEFAULT_RESOURCE_ACCESS_LEVELS.agent);
+          (input.targetGeneralAccess
+            ? input.targetGeneralAccess === 'editor'
+              ? 'edit'
+              : LEGACY_VIEWER_ACCESS_LEVELS.agent
+            : DEFAULT_RESOURCE_ACCESS_LEVELS.agent);
         await new ResourcePermissionModel(ctx.serverDB, input.targetWorkspaceId).setAccessLevel(
           'agent',
           input.agentId,
@@ -1117,6 +1155,13 @@ export const agentRouter = router({
             cause: { data: { code: TransferErrorCode.OwnerOnly } },
             code: 'FORBIDDEN',
             message: "Only workspace owners can transfer agents carrying others' conversations",
+          });
+        }
+        if (error instanceof AgentOwnedByGroupError) {
+          throw new TRPCError({
+            cause: { data: { code: TransferErrorCode.AgentOwnedByGroup, groups: error.groups } },
+            code: 'CONFLICT',
+            message: 'One of these agents belongs to a chat group and cannot be moved on its own',
           });
         }
         if (error instanceof Error && error.message === AGENT_COPY_IN_PROGRESS) {

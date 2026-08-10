@@ -260,6 +260,27 @@ export default {
   'permission.page.entry': 'Member Permissions',
   'permission.page.generalAccessDesc':
     'What every workspace member can do with this agent. The creator and workspace owners always keep full access.',
+  'permission.page.groupAccessLevelPrivateHint':
+    'Members get this level once the group is published to the workspace. It can be changed after publishing.',
+  'permission.page.groupDevicePolicyDesc':
+    'Whether members can switch the execution environment for their own runs in this group.',
+  'permission.page.groupDevicePolicyFixedDesc':
+    'Members can only use the environment you set for this group',
+  'permission.page.groupDevicePolicyMemberDesc': 'Members can set their own execution environment',
+  'permission.page.groupDevicePolicyUnset':
+    'Pick an execution environment for the orchestrator first, then you can fix it here.',
+  'permission.page.groupGeneralAccessDesc':
+    'What every workspace member can do with this group. The same level is applied to the member agents the group owns. The creator and workspace owners always keep full access.',
+  'permission.page.groupPersonalDesc':
+    'This group only belongs to you, so there is nothing to share yet. Publish it to a workspace to set member permissions.',
+  'permission.page.groupPersonalTitle': 'Permissions apply to workspace groups',
+  'permission.page.groupPrivateNotice':
+    'This group is still private. Everything here takes effect once you publish it to the workspace.',
+  'permission.page.groupModelPolicyDesc':
+    'Whether members can switch the model for their own conversations in this group.',
+  'permission.page.groupModelPolicyFixedDesc':
+    'Members can only use the model you set for this group',
+  'permission.page.groupModelPolicyMemberDesc': 'Members can use a model they set themselves',
   'permission.page.memberGroup': 'Access',
   'permission.page.modelPolicyFixedDesc': 'Members can only use the model you set',
   'permission.page.modelPolicyMemberDesc': 'Members can use a model they set themselves',
@@ -2380,6 +2401,22 @@ When I am ___, I need ___
   'workspace.general.transferAgents.modal.done': 'Done',
   'workspace.general.transferAgents.modal.failed': 'Failed to move agents',
   'workspace.general.transferAgents.modal.goToTarget': 'Go to {{target}}',
+  'workspace.general.transferAgents.modal.groupImpact.blocked':
+    "Some agents can't be moved on their own",
+  'workspace.general.transferAgents.modal.groupImpact.blockedDesc':
+    'They belong to a chat group rather than to you. Move the group instead, or remove them from it first, then try again.',
+  'workspace.general.transferAgents.modal.groupImpact.blockedHeading': 'Blocked by their group',
+  'workspace.general.transferAgents.modal.groupImpact.confirm': 'Move anyway',
+  'workspace.general.transferAgents.modal.groupImpact.leaving':
+    'Moving an agent takes it out of its chat groups',
+  'workspace.general.transferAgents.modal.groupImpact.leavingDesc':
+    'Each group keeps everything already said there — the agent just stops replying in it.',
+  'workspace.general.transferAgents.modal.groupImpact.leavingHeading': 'Will leave these groups',
+  'workspace.general.transferAgents.modal.groupImpact.loadFailed':
+    'Could not check chat group membership',
+  'workspace.general.transferAgents.modal.groupImpact.privateGroup': 'A group you cannot see',
+  'workspace.general.transferAgents.modal.groupImpact.untitledAgent': 'Untitled agent',
+  'workspace.general.transferAgents.modal.groupImpact.untitledGroup': 'Untitled group',
   'workspace.general.transferAgents.modal.loadFailed': 'Failed to load agents',
   'workspace.general.transferAgents.modal.moveAgent': 'Move Agent',
   'workspace.general.transferAgents.modal.moveAgentDesc':
@@ -2412,6 +2449,15 @@ When I am ___, I need ___
   'workspace.general.transferAgentGroups.modal.done': 'Done',
   'workspace.general.transferAgentGroups.modal.failed': 'Failed to transfer agent groups',
   'workspace.general.transferAgentGroups.modal.goToTarget': 'Go to {{target}}',
+  'workspace.general.transferAgentGroups.modal.externalMembers':
+    'Some members belong to their owners, not to the group',
+  'workspace.general.transferAgentGroups.modal.externalMembersConfirm': 'Move groups',
+  'workspace.general.transferAgentGroups.modal.externalMembersDesc':
+    'They stay where they are, and each group moves with its own copy of them so its history still makes sense.',
+  'workspace.general.transferAgentGroups.modal.externalMembersHeading': 'Members staying behind',
+  'workspace.general.transferAgentGroups.modal.externalMembersLoadFailed':
+    'Could not check which members belong to their owners',
+  'workspace.general.transferAgentGroups.modal.untitledAgent': 'Untitled agent',
   'workspace.general.transferAgentGroups.modal.loadFailed': 'Failed to load agent groups',
   'workspace.general.transferAgentGroups.modal.noGroups': 'No agent groups in this workspace',
   'workspace.general.transferAgentGroups.modal.selectGroups': 'Select agent groups to transfer.',
