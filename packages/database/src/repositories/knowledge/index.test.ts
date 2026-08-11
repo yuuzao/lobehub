@@ -1,10 +1,10 @@
 // @vitest-environment node
-import { FilesTabs } from '@lobechat/types';
+import { FileSource, FilesTabs } from '@lobechat/types';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { getTestDB } from '../../core/getTestDB';
 import type { NewDocument, NewFile } from '../../schemas/file';
-import { documents, files } from '../../schemas/file';
+import { documents, files, knowledgeBaseFiles, knowledgeBases } from '../../schemas/file';
 import { chunks, embeddings } from '../../schemas/rag';
 import { fileChunks } from '../../schemas/relations';
 import { users } from '../../schemas/user';
@@ -1175,6 +1175,187 @@ describe('KnowledgeRepo', () => {
 
       expect(file1).toBeUndefined();
       expect(file2).toBeDefined();
+    });
+  });
+
+  describe('query - knowledge base scoping', () => {
+    beforeEach(async () => {
+      await serverDB.insert(knowledgeBases).values({ id: 'kb-1', name: 'KB One', userId });
+
+      await serverDB.insert(files).values([
+        {
+          id: 'kb-file',
+          fileType: 'application/pdf',
+          name: 'in-kb.pdf',
+          size: 100,
+          url: 'kb-file-url',
+          userId,
+        },
+        {
+          id: 'loose-file',
+          fileType: 'application/pdf',
+          name: 'outside-kb.pdf',
+          size: 100,
+          url: 'loose-file-url',
+          userId,
+        },
+      ]);
+      await serverDB
+        .insert(knowledgeBaseFiles)
+        .values([{ fileId: 'kb-file', knowledgeBaseId: 'kb-1', userId }]);
+
+      await serverDB.insert(documents).values([
+        // standalone note inside the KB — the document arm owns this row
+        {
+          id: 'kb-note',
+          content: 'note',
+          fileType: 'custom/other',
+          filename: 'kb-note.txt',
+          knowledgeBaseId: 'kb-1',
+          source: 'note-source',
+          sourceType: 'api',
+          totalCharCount: 10,
+          totalLineCount: 1,
+          userId,
+        },
+        // note outside any KB
+        {
+          id: 'loose-note',
+          content: 'note',
+          fileType: 'custom/other',
+          filename: 'loose-note.txt',
+          source: 'note-source',
+          sourceType: 'api',
+          totalCharCount: 10,
+          totalLineCount: 1,
+          userId,
+        },
+      ]);
+    });
+
+    it('should return only the files and standalone notes of the requested knowledge base', async () => {
+      const results = await knowledgeRepo.query({ knowledgeBaseId: 'kb-1' });
+
+      expect(results.map((item) => item.id).sort()).toEqual(['kb-file', 'kb-note']);
+    });
+
+    it('should exclude knowledge-base files from the default listing', async () => {
+      const results = await knowledgeRepo.query({ showFilesInKnowledgeBase: false });
+
+      const ids = results.map((item) => item.id);
+      expect(ids).toContain('loose-file');
+      expect(ids).not.toContain('kb-file');
+    });
+
+    it('should include knowledge-base files when asked to', async () => {
+      const results = await knowledgeRepo.query({ showFilesInKnowledgeBase: true });
+
+      expect(results.map((item) => item.id)).toContain('kb-file');
+    });
+  });
+
+  describe('query - parent scoping', () => {
+    beforeEach(async () => {
+      await serverDB.insert(documents).values({
+        id: 'folder-1',
+        content: null,
+        fileType: 'custom/folder',
+        filename: 'folder',
+        source: 'folder-source',
+        sourceType: 'api',
+        totalCharCount: 0,
+        totalLineCount: 0,
+        userId,
+      });
+
+      await serverDB.insert(files).values([
+        {
+          id: 'child-file',
+          fileType: 'application/pdf',
+          name: 'child.pdf',
+          parentId: 'folder-1',
+          size: 100,
+          url: 'child-url',
+          userId,
+        },
+        {
+          id: 'root-file',
+          fileType: 'application/pdf',
+          name: 'root.pdf',
+          size: 100,
+          url: 'root-url',
+          userId,
+        },
+      ]);
+    });
+
+    it('should return only children of the requested parent', async () => {
+      const results = await knowledgeRepo.query({ parentId: 'folder-1' });
+
+      expect(results.map((item) => item.id)).toEqual(['child-file']);
+    });
+
+    it('should return only root-level rows when parentId is null', async () => {
+      const results = await knowledgeRepo.query({ parentId: null });
+
+      const ids = results.map((item) => item.id);
+      expect(ids).toContain('root-file');
+      expect(ids).toContain('folder-1');
+      expect(ids).not.toContain('child-file');
+    });
+  });
+
+  describe('acceptance evidence hiding', () => {
+    beforeEach(async () => {
+      await serverDB.insert(files).values([
+        {
+          id: 'library-file',
+          fileType: 'text/plain',
+          name: 'notes.txt',
+          size: 100,
+          url: 'library-url',
+          userId,
+        },
+        {
+          id: 'evidence-file',
+          fileType: 'text/plain',
+          name: 'payload-execution.txt',
+          size: 100,
+          source: FileSource.Acceptance,
+          url: 'evidence-url',
+          userId,
+        },
+        {
+          id: 'generated-file',
+          fileType: 'image/png',
+          name: 'generated.png',
+          size: 100,
+          source: FileSource.ImageGeneration,
+          url: 'generated-url',
+          userId,
+        },
+      ]);
+    });
+
+    it('should hide acceptance evidence from the file list', async () => {
+      const result = await knowledgeRepo.query({ category: FilesTabs.All });
+
+      const ids = result.map((item) => item.fileId);
+      expect(ids).toContain('library-file');
+      expect(ids).toContain('generated-file');
+      expect(ids).not.toContain('evidence-file');
+    });
+
+    it('should hide acceptance evidence from recent items', async () => {
+      const result = await knowledgeRepo.queryRecent(50, 'file');
+
+      expect(result.map((item) => item.fileId)).not.toContain('evidence-file');
+    });
+
+    it('should still resolve acceptance evidence by id', async () => {
+      const result = await knowledgeRepo.findById('evidence-file', 'file');
+
+      expect(result?.name).toBe('payload-execution.txt');
     });
   });
 
